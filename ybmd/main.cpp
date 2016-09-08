@@ -25,7 +25,8 @@ HMODULE				g_hDll = 0;
 
 
 //initialization of MS Class Mini-driver API function pointers
-PFN_CARD_ACQUIRE_CONTEXT	pOrigCardAcquireContext = NULL;
+PFN_CARD_ACQUIRE_CONTEXT		pOrigCardAcquireContext = NULL;
+PFN_CARD_CHANGE_AUTHENTICATOR	pOrigCardChangeAuthenticator = NULL;
 
 
 //CardAcquireContext
@@ -35,11 +36,45 @@ CardAcquireContext(
 	__in	DWORD		dwFlags
 )
 {
+	DWORD	dwRet;
 	if (logger) {
 		logger->TraceInfo("CardAcquireContext");
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 	}
-	return pOrigCardAcquireContext(pCardData, dwFlags);
+	dwRet = pOrigCardAcquireContext(pCardData, dwFlags);
+	pCardData->pfnCardChangeAuthenticator = CardChangeAuthenticator;
+	return dwRet;
+}
+
+
+//CardChangeAuthenticator
+DWORD WINAPI
+CardChangeAuthenticator(
+	__in									PCARD_DATA	pCardData,
+	__in									LPWSTR		pwszUserId,
+	__in_bcount(cbCurrentAuthenticator)		PBYTE		pbCurrentAuthenticator,
+	__in									DWORD		cbCurrentAuthenticator,
+	__in_bcount(cbNewAuthenticator)			PBYTE		pbNewAuthenticator,
+	__in									DWORD		cbNewAuthenticator,
+	__in									DWORD		cRetryCount,
+	__in									DWORD		dwFlags,
+	__out_opt								PDWORD		pcAttemptsRemaining
+)
+{
+	if (logger) {
+		logger->TraceInfo("CardChangeAuthenticator");
+	}
+	return pOrigCardChangeAuthenticator(
+				pCardData,
+				pwszUserId,
+				pbCurrentAuthenticator,
+				cbCurrentAuthenticator,
+				pbNewAuthenticator,
+				cbNewAuthenticator,
+				cRetryCount,
+				dwFlags,
+				pcAttemptsRemaining
+				);
 }
 
 
@@ -70,6 +105,7 @@ void hookInitialize() {
 
 	//GetProcAddress
 	pOrigCardAcquireContext = (PFN_CARD_ACQUIRE_CONTEXT)GetProcAddress(g_hDll, "CardAcquireContext");
+	pOrigCardChangeAuthenticator = (PFN_CARD_CHANGE_AUTHENTICATOR)GetProcAddress(g_hDll, "CardChangeAuthenticator");
 
 	//Mhook_SetHook
 	//Mhook_SetHook((PVOID*)&pOrigCardAcquireContext, pHookCardAcquireContext);
@@ -82,6 +118,7 @@ void hookFinalize() {
 	//Mhook_Unhook((PVOID*)&pOrigCardAcquireContext);
 
 	pOrigCardAcquireContext = NULL;
+	pOrigCardChangeAuthenticator = NULL;
 }
 
 
