@@ -1,0 +1,3 @@
+LIBRARY	"ybmd"
+EXPORTS
+	CardAcquireContext
