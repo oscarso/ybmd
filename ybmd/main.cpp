@@ -6,9 +6,25 @@
 
 
 // Global Variables
-#define				LOG_PATH		"C:\\Logs\\"
-LOGGER::CLogger*	logger = NULL;
-HMODULE				g_hDll = 0;
+#define	LOG_PATH			"C:\\Logs\\"
+LOGGER::CLogger*			logger = NULL;
+HMODULE						g_hDll = 0;
+PFN_CARD_ACQUIRE_CONTEXT	pOrigCardAcquireContext;
+
+
+//Initialize
+void Initialize() {
+	g_hDll = LoadLibrary(L"msclmd.dll");
+
+	//GetProcAddress
+	pOrigCardAcquireContext = (PFN_CARD_ACQUIRE_CONTEXT)GetProcAddress(g_hDll, "CardAcquireContext");
+}
+
+
+//Finalize
+void Finalize() {
+	g_hDll = NULL;
+}
 
 
 //CardAcquireContext
@@ -19,6 +35,7 @@ CardAcquireContext(
 )
 {
 	DWORD	dwRet = NO_ERROR;
+
 	if (logger) {
 		logger->TraceInfo("CardAcquireContext");
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
@@ -39,25 +56,80 @@ CardAcquireContext(
 		logger->TraceInfo("IN pCardData->hScard: %x", pCardData->hScard);
 	}
 
-	//pCardData->pfnCardDeleteContext = CardDeleteContext;
-	//pCardData->pfnCardAuthenticatePin = CardAuthenticatePin;
-	//pCardData->pfnCardChangeAuthenticator = CardChangeAuthenticator;
+#if 0
+	dwRet = pOrigCardAcquireContext(pCardData, dwFlags);
+#else
+	pCardData->pfnCardAuthenticateChallenge = NULL;//pOrigCardData->pfnCardAuthenticateChallenge;
+	pCardData->pfnCardAuthenticateEx = NULL;//pOrigCardData->pfnCardAuthenticateEx;
+	pCardData->pfnCardAuthenticatePin = NULL;//CardAuthenticatePin;
+	pCardData->pfnCardChangeAuthenticator = NULL;//CardChangeAuthenticator;
+	pCardData->pfnCardChangeAuthenticatorEx = NULL;//pOrigCardData->pfnCardChangeAuthenticatorEx;
+	pCardData->pfnCardConstructDHAgreement = NULL;//pOrigCardData->pfnCardConstructDHAgreement;
+	pCardData->pfnCardCreateContainer = NULL;//pOrigCardData->pfnCardCreateContainer;
+	pCardData->pfnCardCreateDirectory = NULL;//pOrigCardData->pfnCardCreateDirectory;
+	pCardData->pfnCardCreateFile = NULL;//pOrigCardData->pfnCardCreateFile;
+	pCardData->pfnCardDeauthenticate = NULL;//pOrigCardData->pfnCardDeauthenticate;
+	pCardData->pfnCardDeauthenticateEx = NULL;//pOrigCardData->pfnCardDeauthenticateEx;
+	pCardData->pfnCardDeleteContainer = NULL;//pOrigCardData->pfnCardDeleteContainer;
+	pCardData->pfnCardDeleteContext = NULL;//CardDeleteContext;
+	pCardData->pfnCardDeleteDirectory = NULL;//pOrigCardData->pfnCardDeleteDirectory;
+	pCardData->pfnCardDeleteFile = NULL;//pOrigCardData->pfnCardDeleteFile;
+	pCardData->pfnCardDeriveKey = NULL;//pOrigCardData->pfnCardDeriveKey;
+	pCardData->pfnCardDestroyDHAgreement = NULL;//pOrigCardData->pfnCardDestroyDHAgreement;
+	pCardData->pfnCardEnumFiles = NULL;//pOrigCardData->pfnCardEnumFiles;
+	pCardData->pfnCardGetChallenge = NULL;//pOrigCardData->pfnCardGetChallenge;
+	pCardData->pfnCardGetChallengeEx = NULL;//pOrigCardData->pfnCardGetChallengeEx;
+	pCardData->pfnCardGetContainerInfo = NULL;//pOrigCardData->pfnCardGetContainerInfo;
+	pCardData->pfnCardGetContainerProperty = NULL;//pOrigCardData->pfnCardGetContainerProperty;
+	pCardData->pfnCardGetFileInfo = NULL;//pOrigCardData->pfnCardGetFileInfo;
+	pCardData->pfnCardGetProperty = NULL;//pOrigCardData->pfnCardGetProperty;
+	pCardData->pfnCardQueryCapabilities = CardQueryCapabilities;
+	pCardData->pfnCardQueryFreeSpace = NULL;//pOrigCardData->pfnCardQueryFreeSpace;
+	pCardData->pfnCardQueryKeySizes = NULL;//pOrigCardData->pfnCardQueryKeySizes;
+	pCardData->pfnCardReadFile = NULL;//pOrigCardData->pfnCardReadFile;
+	pCardData->pfnCardRSADecrypt = NULL;//pOrigCardData->pfnCardRSADecrypt;
+	pCardData->pfnCardSetContainerProperty = NULL;//pOrigCardData->pfnCardSetContainerProperty;
+	pCardData->pfnCardSetProperty = NULL;//pOrigCardData->pfnCardSetProperty;
+	pCardData->pfnCardSignData = NULL;//pOrigCardData->pfnCardSignData;
+	pCardData->pfnCardUnblockPin = NULL;//pOrigCardData->pfnCardUnblockPin;
+	pCardData->pfnCardWriteFile = NULL;//pOrigCardData->pfnCardWriteFile;
+	pCardData->pvUnused3 = NULL;
+	pCardData->pvUnused4 = NULL;
+	pCardData->pvVendorSpecific = NULL;
+#endif
 
 	return dwRet;
 }
 
 
-#if 0
+//CardQueryCapabilities
+DWORD WINAPI
+CardQueryCapabilities(
+	__in      PCARD_DATA          pCardData,
+	__in      PCARD_CAPABILITIES  pCardCapabilities
+)
+{
+	DWORD	dwRet = NO_ERROR;
+	if (logger) {
+		logger->TraceInfo("CardQueryCapabilities");
+	}
+
+	return dwRet;
+}
+
+
 //CardDeleteContext
 DWORD WINAPI
 CardDeleteContext(
 	__inout		PCARD_DATA	pCardData
 )
 {
+	DWORD	dwRet = NO_ERROR;
 	if (logger) {
 		logger->TraceInfo("CardDeleteContext");
 	}
-	return pOrigCardDeleteContext(pCardData);
+
+	return dwRet;
 }
 
 
@@ -71,16 +143,12 @@ CardAuthenticatePin(
 	__out_opt				PDWORD		pcAttemptsRemaining
 )
 {
+	DWORD	dwRet = NO_ERROR;
 	if (logger) {
 		logger->TraceInfo("CardAuthenticatePin");
 	}
-	return pOrigCardAuthenticatePin(
-				pCardData,
-				pwszUserId,
-				pbPin,
-				cbPin,
-				pcAttemptsRemaining
-				);
+
+	return dwRet;
 }
 
 
@@ -98,22 +166,13 @@ CardChangeAuthenticator(
 	__out_opt								PDWORD		pcAttemptsRemaining
 )
 {
+	DWORD	dwRet = NO_ERROR;
 	if (logger) {
 		logger->TraceInfo("CardChangeAuthenticator");
 	}
-	return pOrigCardChangeAuthenticator(
-				pCardData,
-				pwszUserId,
-				pbCurrentAuthenticator,
-				cbCurrentAuthenticator,
-				pbNewAuthenticator,
-				cbNewAuthenticator,
-				cRetryCount,
-				dwFlags,
-				pcAttemptsRemaining
-				);
+
+	return dwRet;
 }
-#endif
 
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -130,10 +189,16 @@ BOOL WINAPI DllMain(
 )
 {
 	switch (Reason) {
-	case DLL_PROCESS_ATTACH:
+		case DLL_PROCESS_ATTACH:
+			logger = LOGGER::CLogger::getInstance(LOGGER::LogLevel_Info, LOG_PATH, "");
+			if (logger) {
+				logger->TraceInfo("DllMain");
+			}
+			Initialize();
 		break;
 
-	case DLL_PROCESS_DETACH:
+		case DLL_PROCESS_DETACH:
+			Finalize();
 		break;
 	}
 	return TRUE;
