@@ -1,9 +1,11 @@
 #include "stdafx.h"
 #include <stdio.h>
-#include <VersionHelpers.h>
 #include <mutex>
+#include <VersionHelpers.h>
+
 #include "../clogger/logger.h"
-#include "../inc_cpdk/cardmod.h"
+#include "../inc/cpdk/cardmod.h"
+#include <ykpiv.h>
 
 
 // Global Variables
