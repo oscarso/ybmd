@@ -3,14 +3,15 @@
 #include <mutex>
 #include <VersionHelpers.h>
 
-#include "../clogger/logger.h"
+#include "../cpplogger/cpplogger.h"
 #include "../inc/cpdk/cardmod.h"
-#include <ykpiv.h>
+#include <ykpiv/ykpiv.h>
+#include <internal.h>
 
 
 // Global Variables
 #define	LOG_PATH			"C:\\Logs\\"
-LOGGER::CLogger*			logger = NULL;
+CPPLOGGER::CPPLogger*		logger = NULL;
 HMODULE						g_hDll = 0;
 OSVERSIONINFO				g_osver;
 unsigned int				g_maxSpecVersion = 7;
@@ -25,14 +26,15 @@ CardAcquireContext(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 
+	char cardName[MAX_PATH] = { 0 };
+	wcstombs(cardName, pCardData->pwszCardName, wcslen(pCardData->pwszCardName));
 	if (logger) {
 		logger->TraceInfo("CardAcquireContext");
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 		logger->TraceInfo("IN pCardData->dwVersion: %d", pCardData->dwVersion);
 		logger->TraceInfo("IN pCardData->pbAtr:");
 		logger->PrintBuffer(pCardData->pbAtr, pCardData->cbAtr);
-		logger->TraceInfo("IN pCardData->pwszCardName:");
-		logger->PrintBuffer(pCardData->pwszCardName, lstrlen(pCardData->pwszCardName));
+		logger->TraceInfo("IN pCardData->pwszCardName: %s", cardName);
 		logger->TraceInfo("IN pCardData->pfnCspAlloc: %p", &(pCardData->pfnCspAlloc));
 		logger->TraceInfo("IN pCardData->pfnCspReAlloc: %p", &(pCardData->pfnCspReAlloc));
 		logger->TraceInfo("IN pCardData->pfnCspFree: %p", &(pCardData->pfnCspFree));
@@ -92,7 +94,36 @@ CardAcquireContext(
 			logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspFree", __FUNCTION__, __LINE__);
 			return SCARD_E_INVALID_PARAMETER;
 		}
-		pCardData->pvVendorSpecific = NULL;
+
+		//Storing ykpiv_state
+		ykpiv_rc		ykRet;
+		ykpiv_state*	ykState = NULL;
+
+		//ykRet = ykpiv_init(&ykState, FALSE);
+		ykState = (ykpiv_state *)pCardData->pfnCspAlloc(sizeof(ykpiv_state));
+		if (!ykState) {
+			return SCARD_E_NO_MEMORY;
+		}
+		memset(ykState, 0, sizeof(ykpiv_state));
+		ykState->verbose = TRUE;
+		ykState->context = SCARD_E_INVALID_HANDLE;
+		if (logger) {
+			logger->TraceInfo("CardAcquireContext: ykpiv_init - state->card=%x, state->context=%x, state->verbose=%d",
+				ykState->card, ykState->context, ykState->verbose);
+		}
+		ykRet = ykpiv_connect(ykState, cardName);
+		if (ykRet != YKPIV_OK) {
+			if (logger) {
+				logger->TraceInfo("CardAcquireContext: ykpiv_connect failed - ErrCode=%d", ykRet);
+			}
+			return SCARD_F_INTERNAL_ERROR;
+		} else {
+			if (logger) {
+				logger->TraceInfo("CardAcquireContext: ykpiv_connect PASSED - ErrCode=%d", ykRet);
+			}
+		}
+		pCardData->pvVendorSpecific = ykState;
+
 		if (0 == pCardData->hScard)
 			return SCARD_E_INVALID_HANDLE;
 	}
@@ -319,9 +350,25 @@ CardChangeAuthenticator(
 	__out_opt PDWORD pcAttemptsRemaining
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
+	DWORD		dwRet = SCARD_S_SUCCESS;
+	ykpiv_rc	ykRet;
+	int			tries;
+
 	if (logger) {
 		logger->TraceInfo("CardChangeAuthenticator");
+	}
+
+	ykpiv_state* state = (ykpiv_state *)pCardData->pvVendorSpecific;
+	if (logger) {
+		logger->TraceInfo("CardChangeAuthenticator: state->context=0x%x", state->context);
+	}
+	ykRet = ykpiv_change_pin(
+				state,
+				"YubicoRules!", sizeof("YubicoRules!"),
+				"YubicoRules!", sizeof("YubicoRules!"),
+				&tries);
+	if (logger) {
+		logger->TraceInfo("CardChangeAuthenticator: ykpiv_change_pin: ykRet=0x%x; tries=%d", ykRet, tries);
 	}
 	return dwRet;
 } // of CardChangeAuthenticator
@@ -638,7 +685,7 @@ BOOL WINAPI DllMain(
 {
 	switch (Reason) {
 		case DLL_PROCESS_ATTACH:
-			logger = LOGGER::CLogger::getInstance(LOGGER::LogLevel_Info, LOG_PATH, "");
+			logger = CPPLOGGER::CPPLogger::getInstance(CPPLOGGER::LogLevel_Info, LOG_PATH, "");
 			if (logger) {
 				logger->TraceInfo("DllMain");
 			}

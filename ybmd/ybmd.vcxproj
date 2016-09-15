@@ -104,13 +104,15 @@
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;_USRDLL;YBMD_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <AdditionalOptions>/D _CRT_SECURE_NO_WARNINGS %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>../inc/ykpiv</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\yubico-piv-tool-win64\include;..\yubico-piv-tool-win64\include\ykpiv;..\inc\yk</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalOptions>/integritycheck</AdditionalOptions>
       <ModuleDefinitionFile>ybmd.def</ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>..\yubico-piv-tool-win64\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.dll.a;libssl.dll.a;winscard.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>signtool sign /v /ph /s YubicoTestStore /n Yubico.com(Test) ..\x64\Debug\ybmd.dll</Command>
@@ -145,7 +147,7 @@
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;YBMD_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <AdditionalOptions>/D _CRT_SECURE_NO_WARNINGS %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>../inc/ykpiv</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\yubico-piv-tool-win64\include;..\yubico-piv-tool-win64\include\ykpiv;..\inc\yk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -154,18 +156,25 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalOptions>/integritycheck</AdditionalOptions>
       <ModuleDefinitionFile>ybmd.def</ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>..\yubico-piv-tool-win64\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.dll.a;libssl.dll.a;winscard.lib;libykpiv.dll.a;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>signtool sign /v /ph /s YubicoTestStore /n Yubico.com(Test) ..\x64\Release\ybmd.dll</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\clogger\logger.cpp" />
+    <ClCompile Include="..\cpplogger\cpplogger.cpp" />
+    <ClCompile Include="..\yubico-piv-tool-win64\src\error.c" />
+    <ClCompile Include="..\yubico-piv-tool-win64\src\version.c" />
+    <ClCompile Include="..\yubico-piv-tool-win64\src\ykpiv.c" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\clogger\logger.h" />
+    <ClInclude Include="..\cpplogger\cpplogger.h" />
     <ClInclude Include="..\inc_cpdk\cardmod.h" />
+    <ClInclude Include="..\yubico-piv-tool-win64\src\internal.h" />
+    <ClInclude Include="..\yubico-piv-tool-win64\src\ykpiv.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
