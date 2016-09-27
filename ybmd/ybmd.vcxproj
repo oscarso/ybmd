@@ -164,6 +164,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\clogger\clogger.c" />
     <ClCompile Include="..\cpplogger\cpplogger.cpp" />
     <ClCompile Include="..\yubico-piv-tool-win64\src\error.c" />
     <ClCompile Include="..\yubico-piv-tool-win64\src\version.c" />
@@ -171,6 +172,7 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\clogger\clogger.h" />
     <ClInclude Include="..\cpplogger\cpplogger.h" />
     <ClInclude Include="..\inc_cpdk\cardmod.h" />
     <ClInclude Include="..\yubico-piv-tool-win64\src\internal.h" />

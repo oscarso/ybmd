@@ -40,6 +40,8 @@
 
 #include "internal.h"
 #include "ykpiv.h"
+#include "../../clogger/clogger.h"
+
 
 static ykpiv_rc send_data(ykpiv_state *state, APDU *apdu,
     unsigned char *data, unsigned long *recv_len, int *sw);
@@ -135,7 +137,12 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
   long rc;
   char *reader_ptr;
 
+  LogInfo("ykpiv_connect: wanted %s", wanted);
+
   ykpiv_rc ret = ykpiv_list_readers(state, reader_buf, &num_readers);
+  LogInfo("ykpiv_connect: ykpiv_list_readers - num_readers=%d", num_readers);
+  LogInfo("ykpiv_connect: ykpiv_list_readers - reader_buf");
+  LogBuffer(reader_buf, num_readers);
   if(ret != YKPIV_OK) {
     return ret;
   }
@@ -145,12 +152,15 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
       if(!strstr(reader_ptr, wanted)) {
         if(state->verbose) {
           fprintf(stderr, "skipping reader '%s' since it doesn't match '%s'.\n", reader_ptr, wanted);
+		  LogInfo("ykpiv_connect: skipping reader '%s' since it doesn't match '%s'.\n", reader_ptr, wanted);
+		  LogBuffer(reader_ptr, 32);
         }
         continue;
       }
     }
     if(state->verbose) {
       fprintf(stderr, "trying to connect to reader '%s'.\n", reader_ptr);
+	  LogInfo("ykpiv_connect: trying to connect to reader '%s'.\n", reader_ptr);
     }
     rc = SCardConnect(state->context, reader_ptr, SCARD_SHARE_SHARED,
         SCARD_PROTOCOL_T1, &state->card, &active_protocol);
@@ -158,6 +168,7 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
     {
       if(state->verbose) {
         fprintf(stderr, "SCardConnect failed, rc=%08lx\n", rc);
+		LogInfo("ykpiv_connect: SCardConnect failed, rc=%08lx\n", rc);
       }
       continue;
     }
@@ -178,6 +189,7 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
       if((res = send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
         if(state->verbose) {
           fprintf(stderr, "Failed communicating with card: '%s'\n", ykpiv_strerror(res));
+		  LogInfo("ykpiv_connect: Failed communicating with card: '%s'\n", ykpiv_strerror(res));
         }
         continue;
       } else if(sw == SW_SUCCESS) {
@@ -185,6 +197,7 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
       } else {
         if(state->verbose) {
           fprintf(stderr, "Failed selecting application: %04x\n", sw);
+		  LogInfo("ykpiv_connect - Failed selecting application: %04x\n", sw);
         }
       }
     }
@@ -193,6 +206,7 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
   if(*reader_ptr == '\0') {
     if(state->verbose) {
       fprintf(stderr, "error: no usable reader found.\n");
+	  LogInfo("ykpiv_connect: error - no usable reader found.\n");
     }
     SCardReleaseContext(state->context);
     state->context = SCARD_E_INVALID_HANDLE;
@@ -211,6 +225,7 @@ ykpiv_rc ykpiv_list_readers(ykpiv_state *state, char *readers, size_t *len) {
     if (rc != SCARD_S_SUCCESS) {
       if(state->verbose) {
         fprintf (stderr, "error: SCardEstablishContext failed, rc=%08lx\n", rc);
+		LogInfo("ykpiv_list_readers: error - SCardEstablishContext failed, rc=%08lx\n", rc);
       }
       return YKPIV_PCSC_ERROR;
     }
@@ -220,6 +235,7 @@ ykpiv_rc ykpiv_list_readers(ykpiv_state *state, char *readers, size_t *len) {
   if (rc != SCARD_S_SUCCESS) {
     if(state->verbose) {
       fprintf (stderr, "error: SCardListReaders failed, rc=%08lx\n", rc);
+	  LogInfo("ykpiv_list_readers: error - SCardListReaders failed, rc=%08lx\n", rc);
     }
     SCardReleaseContext(state->context);
     state->context = SCARD_E_INVALID_HANDLE;
@@ -235,6 +251,7 @@ ykpiv_rc ykpiv_list_readers(ykpiv_state *state, char *readers, size_t *len) {
   {
     if(state->verbose) {
       fprintf (stderr, "error: SCardListReaders failed, rc=%08lx\n", rc);
+	  LogInfo("ykpiv_list_readers: error - SCardListReaders failed, rc=%08lx\n", rc);
     }
     SCardReleaseContext(state->context);
     state->context = SCARD_E_INVALID_HANDLE;
@@ -242,6 +259,7 @@ ykpiv_rc ykpiv_list_readers(ykpiv_state *state, char *readers, size_t *len) {
   }
 
   *len = num_readers;
+  LogInfo("ykpiv_list_readers: num_readers=%d", *len);
 
   return YKPIV_OK;
 }
