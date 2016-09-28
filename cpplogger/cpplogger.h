@@ -61,6 +61,7 @@ namespace CPPLOGGER
 				const std::string strLogPath = "",
 				const std::string strLogName = "");
 		void Trace(const std::string &strLog);
+		BOOL		shouldLog();
 		std::string getProcessName();
 		std::string GetTime();
 		std::string GetAppPathA();
@@ -68,7 +69,7 @@ namespace CPPLOGGER
 		const char* path_file(const char *path, char splitter);
 		const char* buf_spec(const void* buf_addr, const long buf_len);
 	private:
-		static CPPLogger*			m_Instance;
+		static CPPLogger*		m_Instance;
 		static CriticalSection	m_csInstance;
 		static CriticalSection	m_csLog;
 

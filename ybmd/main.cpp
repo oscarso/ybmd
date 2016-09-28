@@ -99,7 +99,16 @@ CardAcquireContext(
 		ykpiv_rc		ykRet;
 		ykpiv_state*	ykState = NULL;
 
-		//ykRet = ykpiv_init(&ykState, FALSE);
+#if 1
+		ykRet = ykpiv_init(&ykState, FALSE);
+		if (ykRet != YKPIV_OK) {
+			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_init failed - ErrCode=%d", ykRet); }
+			return SCARD_F_INTERNAL_ERROR;
+		}
+		else {
+			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_init PASSED - ErrCode=%d", ykRet); }
+		}
+#else
 		ykState = (ykpiv_state *)pCardData->pfnCspAlloc(sizeof(ykpiv_state));
 		if (!ykState) {
 			return SCARD_E_NO_MEMORY;
@@ -111,17 +120,18 @@ CardAcquireContext(
 			logger->TraceInfo("CardAcquireContext: ykpiv_init - state->card=%x, state->context=%x, state->verbose=%d",
 				ykState->card, ykState->context, ykState->verbose);
 		}
-		ykRet = ykpiv_connect(ykState, cardName);
+#endif
+
+#if 1
+		if (logger) { logger->TraceInfo("CardAcquireContext: Calling ykpiv_connect"); }
+		ykRet = ykpiv_connect(ykState, NULL);//"Yubico Yubikey 4 CCID 0"
 		if (ykRet != YKPIV_OK) {
-			if (logger) {
-				logger->TraceInfo("CardAcquireContext: ykpiv_connect failed - ErrCode=%d", ykRet);
-			}
+			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_connect failed - ErrCode=%d", ykRet); }
 			return SCARD_F_INTERNAL_ERROR;
 		} else {
-			if (logger) {
-				logger->TraceInfo("CardAcquireContext: ykpiv_connect PASSED - ErrCode=%d", ykRet);
-			}
+			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_connect PASSED - ErrCode=%d", ykRet); }
 		}
+#endif
 		pCardData->pvVendorSpecific = ykState;
 
 		if (0 == pCardData->hScard)
@@ -181,6 +191,13 @@ CardDeleteContext(
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
 		logger->TraceInfo("CardDeleteContext");
+	}
+
+	ykpiv_rc		ykRet;
+	ykpiv_state*	ykState = (ykpiv_state *)pCardData->pvVendorSpecific;
+	ykRet = ykpiv_disconnect(ykState);
+	if (logger) {
+		logger->TraceInfo("CardDeleteContext: ykpiv_disconnect - ykRet=%d", ykRet);
 	}
 
 	return dwRet;
@@ -676,6 +693,21 @@ CardCreateContainerEx(
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
+
+//getProcessName
+const char*	getProcessName() {
+	//wchar_t	wProcessName[MAX_PATH];
+	char	ProcessName[MAX_PATH];
+	GetModuleFileName(NULL, ProcessName, MAX_PATH);
+	std::string PN(ProcessName);//convert wchar* to wstring
+	std::string strProcessNameFullPath(PN.begin(), PN.end());
+	size_t lastIndexPath = strProcessNameFullPath.find_last_of("\\");
+	size_t lastIndexDot = strProcessNameFullPath.find_last_of(".");
+	std::string strProcessName = strProcessNameFullPath.substr(lastIndexPath + 1, lastIndexDot - lastIndexPath - 1);
+	return strProcessName.c_str();
+}
+
+
 //DllMain
 BOOL WINAPI DllMain(
 	__in HINSTANCE  hInstance,
@@ -692,6 +724,9 @@ BOOL WINAPI DllMain(
 		break;
 
 		case DLL_PROCESS_DETACH:
+			if (logger) {
+				delete logger;
+			}
 		break;
 	}
 	return TRUE;

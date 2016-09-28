@@ -40,6 +40,10 @@ namespace CPPLOGGER
 		m_strLogPath(strLogPath),
 		m_strLogName(strLogName)
 	{
+		if (!shouldLog()) {
+			return;
+		}
+
 		//log file path
 		m_pFileStream = NULL;
 		if (m_strLogPath.empty()) {
@@ -49,10 +53,6 @@ namespace CPPLOGGER
 			m_strLogPath.append("\\");
 		}
 		MakeSureDirectoryPathExists(m_strLogPath.c_str());
-
-		//process name
-		//char szProcess[MAX_PATH] = { 0 };
-		//GetModuleFileNameA(NULL, szProcess, MAX_PATH);
 
 		//process ID
 		DWORD dwProcessID = GetCurrentProcessId();
@@ -94,12 +94,18 @@ namespace CPPLOGGER
 	}
 
 
+	BOOL CPPLogger::shouldLog() {
+		return (0 == strcmp(getProcessName().c_str(), "svchost") ? FALSE : TRUE);
+	}
+
+
 	//getProcessName
 	std::string CPPLogger::getProcessName() {
-		wchar_t	wProcessName[MAX_PATH];
-		GetModuleFileName(NULL, wProcessName, MAX_PATH);
-		std::wstring wsPN(wProcessName);//convert wchar* to wstring
-		std::string strProcessNameFullPath(wsPN.begin(), wsPN.end());
+		//wchar_t	wProcessName[MAX_PATH];
+		char	ProcessName[MAX_PATH];
+		GetModuleFileName(NULL, ProcessName, MAX_PATH);
+		std::string PN(ProcessName);//convert wchar* to wstring
+		std::string strProcessNameFullPath(PN.begin(), PN.end());
 		size_t lastIndexPath = strProcessNameFullPath.find_last_of("\\");
 		size_t lastIndexDot = strProcessNameFullPath.find_last_of(".");
 		std::string strProcessName = strProcessNameFullPath.substr(lastIndexPath + 1, lastIndexDot - lastIndexPath - 1);
