@@ -79,63 +79,44 @@ CardAcquireContext(
 			return SCARD_E_INVALID_PARAMETER;
 
 		if (NULL == pCardData->pwszCardName) {
-			logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pwszCardName", __FUNCTION__, __LINE__);
+			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pwszCardName", __FUNCTION__, __LINE__); }
 			return SCARD_E_INVALID_PARAMETER;
 		}
 		if (NULL == pCardData->pfnCspAlloc) {
-			logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspAlloc", __FUNCTION__, __LINE__);
+			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspAlloc", __FUNCTION__, __LINE__); }
 			return SCARD_E_INVALID_PARAMETER;
 		}
 		if (NULL == pCardData->pfnCspReAlloc) {
-			logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspReAlloc", __FUNCTION__, __LINE__);
+			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspReAlloc", __FUNCTION__, __LINE__); }
 			return SCARD_E_INVALID_PARAMETER;
 		}
 		if (NULL == pCardData->pfnCspFree) {
-			logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspFree", __FUNCTION__, __LINE__);
+			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspFree", __FUNCTION__, __LINE__); }
 			return SCARD_E_INVALID_PARAMETER;
 		}
-
-		//Storing ykpiv_state
-		ykpiv_rc		ykRet;
-		ykpiv_state*	ykState = NULL;
-
-#if 1
-		ykRet = ykpiv_init(&ykState, FALSE);
-		if (ykRet != YKPIV_OK) {
-			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_init failed - ErrCode=%d", ykRet); }
-			return SCARD_F_INTERNAL_ERROR;
-		}
-		else {
-			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_init PASSED - ErrCode=%d", ykRet); }
-		}
-#else
-		ykState = (ykpiv_state *)pCardData->pfnCspAlloc(sizeof(ykpiv_state));
-		if (!ykState) {
-			return SCARD_E_NO_MEMORY;
-		}
-		memset(ykState, 0, sizeof(ykpiv_state));
-		ykState->verbose = TRUE;
-		ykState->context = SCARD_E_INVALID_HANDLE;
-		if (logger) {
-			logger->TraceInfo("CardAcquireContext: ykpiv_init - state->card=%x, state->context=%x, state->verbose=%d",
-				ykState->card, ykState->context, ykState->verbose);
-		}
-#endif
-
-#if 1
-		if (logger) { logger->TraceInfo("CardAcquireContext: Calling ykpiv_connect"); }
-		ykRet = ykpiv_connect(ykState, NULL);//"Yubico Yubikey 4 CCID 0"
-		if (ykRet != YKPIV_OK) {
-			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_connect failed - ErrCode=%d", ykRet); }
-			return SCARD_F_INTERNAL_ERROR;
-		} else {
-			if (logger) { logger->TraceInfo("CardAcquireContext: ykpiv_connect PASSED - ErrCode=%d", ykRet); }
-		}
-#endif
-		pCardData->pvVendorSpecific = ykState;
-
-		if (0 == pCardData->hScard)
+		if (0 == pCardData->hScard) {
+			if (logger) { logger->TraceInfo("CardAcquireContext failed - pCardData->hScard = NULL"); }
 			return SCARD_E_INVALID_HANDLE;
+		}
+
+		// call ykpiv library
+		ykpiv_state*	ykState;
+		ykpiv_rc		ykrc;
+		LONG			scrc;
+		ykrc = ykpiv_init(&ykState, FALSE);
+		scrc = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &ykState->context);
+		if (SCARD_S_SUCCESS != scrc) {
+			if (logger) { logger->TraceInfo("CardAcquireContext: SCardEstablishContext failed - ErrCode=%x", scrc); }
+			return SCARD_F_INTERNAL_ERROR;
+		}
+		// never call SCardConnect, it will hung up
+		ykState->card = pCardData->hScard;
+		if (logger) {
+			logger->TraceInfo("CardAcquireContext:     ykState->context = %x", ykState->context);
+			logger->TraceInfo("CardAcquireContext:        ykState->card = %x", ykState->card);
+			logger->TraceInfo("CardAcquireContext: pCardData->hSCardCtx = %x", pCardData->hSCardCtx);
+		}
+		pCardData->pvVendorSpecific = ykState;
 	}
 
 	if (g_maxSpecVersion < pCardData->dwVersion)
@@ -193,12 +174,10 @@ CardDeleteContext(
 		logger->TraceInfo("CardDeleteContext");
 	}
 
-	ykpiv_rc		ykRet;
 	ykpiv_state*	ykState = (ykpiv_state *)pCardData->pvVendorSpecific;
-	ykRet = ykpiv_disconnect(ykState);
-	if (logger) {
-		logger->TraceInfo("CardDeleteContext: ykpiv_disconnect - ykRet=%d", ykRet);
-	}
+	if (logger) { logger->TraceInfo("CardDeleteContext: ykState->context = %x", ykState->context);}
+	LONG	scrc = SCardReleaseContext(ykState->context);
+	if (logger) { logger->TraceInfo("CardDeleteContext: SCardReleaseContext - scrc=%x", scrc); }
 
 	return dwRet;
 } // of CardDeleteContext
@@ -368,24 +347,25 @@ CardChangeAuthenticator(
 )
 {
 	DWORD		dwRet = SCARD_S_SUCCESS;
-	ykpiv_rc	ykRet;
+	ykpiv_rc	ykrc;
 	int			tries;
 
 	if (logger) {
 		logger->TraceInfo("CardChangeAuthenticator");
 	}
 
-	ykpiv_state* state = (ykpiv_state *)pCardData->pvVendorSpecific;
+	ykpiv_state*	ykState = (ykpiv_state *)pCardData->pvVendorSpecific;
+	if (logger) { logger->TraceInfo("CardChangeAuthenticator: ykState->context = %x", ykState->context); }
 	if (logger) {
-		logger->TraceInfo("CardChangeAuthenticator: state->context=0x%x", state->context);
+		logger->TraceInfo("CardChangeAuthenticator: state->context=0x%x", ykState->context);
 	}
-	ykRet = ykpiv_change_pin(
-				state,
+	ykrc = ykpiv_change_pin(
+				ykState,
 				"YubicoRules!", sizeof("YubicoRules!"),
 				"YubicoRules!", sizeof("YubicoRules!"),
 				&tries);
 	if (logger) {
-		logger->TraceInfo("CardChangeAuthenticator: ykpiv_change_pin: ykRet=0x%x; tries=%d", ykRet, tries);
+		logger->TraceInfo("CardChangeAuthenticator: ykpiv_change_pin: ykrc=0x%x; tries=%d", ykrc, tries);
 	}
 	return dwRet;
 } // of CardChangeAuthenticator
