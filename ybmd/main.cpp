@@ -17,6 +17,29 @@ OSVERSIONINFO				g_osver;
 unsigned int				g_maxSpecVersion = 7;
 
 
+DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
+	DWORD	dwRet;
+	switch (ykrc) {
+	case YKPIV_OK:						dwRet = SCARD_S_SUCCESS; break;
+	case YKPIV_MEMORY_ERROR:			dwRet = SCARD_E_NO_MEMORY; break;
+	case YKPIV_PCSC_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_SIZE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER; break;
+	case YKPIV_APPLET_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_AUTHENTICATION_ERROR:	dwRet = SCARD_W_CARD_NOT_AUTHENTICATED; break;
+	case YKPIV_RANDOMNESS_ERROR:		dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_GENERIC_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_KEY_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_PARSE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER; break;
+	case YKPIV_WRONG_PIN:				dwRet = SCARD_E_INVALID_CHV; break;
+	case YKPIV_INVALID_OBJECT:			dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_ALGORITHM_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR; break;
+	case YKPIV_PIN_LOCKED:				dwRet = SCARD_W_CHV_BLOCKED; break;
+	default:							dwRet = SCARD_F_UNKNOWN_ERROR;
+	}
+	return dwRet;
+}
+
+
 //CardAcquireContext
 DWORD WINAPI
 CardAcquireContext(
@@ -109,7 +132,7 @@ CardAcquireContext(
 			if (logger) { logger->TraceInfo("CardAcquireContext: SCardEstablishContext failed - ErrCode=%x", scrc); }
 			return SCARD_F_INTERNAL_ERROR;
 		}
-		// never call SCardConnect, it will hung up
+		// WARNING: NEVER call SCardConnect/SCardReconnect, it will hung up
 		ykState->card = pCardData->hScard;
 		if (logger) {
 			logger->TraceInfo("CardAcquireContext:     ykState->context = %x", ykState->context);
@@ -346,28 +369,31 @@ CardChangeAuthenticator(
 	__out_opt PDWORD pcAttemptsRemaining
 )
 {
-	DWORD		dwRet = SCARD_S_SUCCESS;
 	ykpiv_rc	ykrc;
-	int			tries;
+	int			tries = 0;
 
 	if (logger) {
 		logger->TraceInfo("CardChangeAuthenticator");
+		char szUserId[MAX_PATH] = { 0 };
+		wcstombs(szUserId, pwszUserId, wcslen(pwszUserId));
+		logger->PrintBuffer(pbCurrentAuthenticator, cbCurrentAuthenticator);
+		logger->PrintBuffer(pbNewAuthenticator, cbNewAuthenticator);
+		logger->TraceInfo("szUserId=%s  cRetryCount=%d  dwFlags=0x%x  pcAttemptsRemaining=%d", szUserId, cRetryCount, dwFlags, *pcAttemptsRemaining);
 	}
 
 	ykpiv_state*	ykState = (ykpiv_state *)pCardData->pvVendorSpecific;
-	if (logger) { logger->TraceInfo("CardChangeAuthenticator: ykState->context = %x", ykState->context); }
 	if (logger) {
 		logger->TraceInfo("CardChangeAuthenticator: state->context=0x%x", ykState->context);
 	}
 	ykrc = ykpiv_change_pin(
 				ykState,
-				"YubicoRules!", sizeof("YubicoRules!"),
-				"YubicoRules!", sizeof("YubicoRules!"),
+				(const char *)pbCurrentAuthenticator, (size_t)cbCurrentAuthenticator,
+				(const char *)pbNewAuthenticator, (size_t)cbNewAuthenticator,
 				&tries);
 	if (logger) {
-		logger->TraceInfo("CardChangeAuthenticator: ykpiv_change_pin: ykrc=0x%x; tries=%d", ykrc, tries);
+		logger->TraceInfo("CardChangeAuthenticator: ykpiv_change_pin: ykrc=%d; tries=%d", ykrc, tries);
 	}
-	return dwRet;
+	return ykrc2mdrc(ykrc);
 } // of CardChangeAuthenticator
 
 
