@@ -109,18 +109,16 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 	const unsigned char *in_ptr = in_data;
 	unsigned long max_out = *out_len;
 	ykpiv_rc res;
-	//long rc;
+	long rc;
 	*out_len = 0;
 
 	logger->TraceInfo("_transfer_data");
 
-	/*rc = SCardBeginTransaction(state->card);
+	rc = SCardBeginTransaction(state->card);
 	if (rc != SCARD_S_SUCCESS) {
-	if (state->verbose) {
-	fprintf(stderr, "error: Failed to begin pcsc transaction, rc=%08lx\n", rc);
+		logger->TraceInfo("_transfer_data: SCardBeginTransaction rc=%x", rc);
+		return YKPIV_PCSC_ERROR;
 	}
-	return YKPIV_PCSC_ERROR;
-	}*/
 
 	do {
 		size_t this_size = 0xff;
@@ -190,13 +188,11 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 		}
 	}
 
-	/*rc = SCardEndTransaction(state->card, SCARD_LEAVE_CARD);
+	rc = SCardEndTransaction(state->card, SCARD_LEAVE_CARD);
 	if (rc != SCARD_S_SUCCESS) {
-	if (state->verbose) {
-	fprintf(stderr, "error: Failed to end pcsc transaction, rc=%08lx\n", rc);
+		logger->TraceInfo("_transfer_data: error: Failed to end pcsc transaction, rc=%08lx\n", rc);
+		return YKPIV_PCSC_ERROR;
 	}
-	return YKPIV_PCSC_ERROR;
-	}*/
 	return YKPIV_OK;
 }
 
