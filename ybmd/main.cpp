@@ -20,23 +20,237 @@ unsigned int				g_maxSpecVersion = 7;
 DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 	DWORD	dwRet;
 	switch (ykrc) {
-	case YKPIV_OK:						dwRet = SCARD_S_SUCCESS; break;
-	case YKPIV_MEMORY_ERROR:			dwRet = SCARD_E_NO_MEMORY; break;
-	case YKPIV_PCSC_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_SIZE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER; break;
-	case YKPIV_APPLET_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_AUTHENTICATION_ERROR:	dwRet = SCARD_W_CARD_NOT_AUTHENTICATED; break;
-	case YKPIV_RANDOMNESS_ERROR:		dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_GENERIC_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_KEY_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_PARSE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER; break;
-	case YKPIV_WRONG_PIN:				dwRet = SCARD_E_INVALID_CHV; break;
-	case YKPIV_INVALID_OBJECT:			dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_ALGORITHM_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR; break;
-	case YKPIV_PIN_LOCKED:				dwRet = SCARD_W_CHV_BLOCKED; break;
+	case YKPIV_OK:						dwRet = SCARD_S_SUCCESS;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_OK -> SCARD_S_SUCCESS"); }
+		break;
+	case YKPIV_MEMORY_ERROR:			dwRet = SCARD_E_NO_MEMORY;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_MEMORY_ERROR -> SCARD_E_NO_MEMORY"); }
+		break;
+	case YKPIV_PCSC_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PCSC_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_SIZE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_SIZE_ERROR -> SCARD_E_INVALID_PARAMETER"); }
+		break;
+	case YKPIV_APPLET_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_APPLET_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_AUTHENTICATION_ERROR:	dwRet = SCARD_W_CARD_NOT_AUTHENTICATED;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_AUTHENTICATION_ERROR -> SCARD_W_CARD_NOT_AUTHENTICATED"); }
+		break;
+	case YKPIV_RANDOMNESS_ERROR:		dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_RANDOMNESS_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_GENERIC_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_GENERIC_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_KEY_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_KEY_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_PARSE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PARSE_ERROR -> SCARD_E_INVALID_PARAMETER"); }
+		break;
+	case YKPIV_WRONG_PIN:				dwRet = SCARD_E_INVALID_CHV;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_WRONG_PIN -> SCARD_E_INVALID_CHV"); }
+		break;
+	case YKPIV_INVALID_OBJECT:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_INVALID_OBJECT -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_ALGORITHM_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_ALGORITHM_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_PIN_LOCKED:				dwRet = SCARD_W_CHV_BLOCKED;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PIN_LOCKED -> SCARD_W_CHV_BLOCKED"); }
+		break;
 	default:							dwRet = SCARD_F_UNKNOWN_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: %d -> SCARD_F_UNKNOWN_ERROR", ykrc); }
 	}
 	return dwRet;
+}
+
+
+#define CHREF_ACT_CHANGE_PIN 0
+#define CHREF_ACT_UNBLOCK_PIN 1
+#define CHREF_ACT_CHANGE_PUK 2
+
+static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
+	unsigned char *data, unsigned long *recv_len, int *sw) {
+	long rc;
+	unsigned int send_len = (unsigned int)apdu->st.lc + 5;
+
+	logger->TraceInfo("_send_data");
+	if (1) {
+		logger->TraceInfo("Data Sent:");
+		logger->PrintBuffer(apdu->raw, send_len);
+	}
+	rc = SCardTransmit(state->card, SCARD_PCI_T1, apdu->raw, send_len, NULL, data, recv_len);
+	if (rc != SCARD_S_SUCCESS) {
+		if (1) {
+			logger->TraceInfo("error: SCardTransmit failed, rc=%08lx\n", rc);
+		}
+		return YKPIV_PCSC_ERROR;
+	}
+
+	if (1) {
+		logger->TraceInfo("Data Received:");
+		logger->PrintBuffer(data, *recv_len);
+	}
+	if (*recv_len >= 2) {
+		*sw = (data[*recv_len - 2] << 8) | data[*recv_len - 1];
+	} else {
+		*sw = 0;
+	}
+	return YKPIV_OK;
+}
+
+ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
+	const unsigned char *in_data, long in_len,
+	unsigned char *out_data, unsigned long *out_len, int *sw) {
+	const unsigned char *in_ptr = in_data;
+	unsigned long max_out = *out_len;
+	ykpiv_rc res;
+	//long rc;
+	*out_len = 0;
+
+	logger->TraceInfo("_transfer_data");
+
+	/*rc = SCardBeginTransaction(state->card);
+	if (rc != SCARD_S_SUCCESS) {
+	if (state->verbose) {
+	fprintf(stderr, "error: Failed to begin pcsc transaction, rc=%08lx\n", rc);
+	}
+	return YKPIV_PCSC_ERROR;
+	}*/
+
+	do {
+		size_t this_size = 0xff;
+		unsigned char data[261];
+		unsigned long recv_len = sizeof(data);
+		APDU apdu;
+
+		memset(apdu.raw, 0, sizeof(apdu.raw));
+		memcpy(apdu.raw, templ, 4);
+		if (in_ptr + 0xff < in_data + in_len) {
+			apdu.st.cla = 0x10;
+		} else {
+			this_size = (size_t)((in_data + in_len) - in_ptr);
+		}
+		if (1) {
+			logger->TraceInfo("Going to send %lu bytes in this go.\n", (unsigned long)this_size);
+		}
+		apdu.st.lc = (unsigned char)this_size;
+		memcpy(apdu.st.data, in_ptr, this_size);
+		res = _send_data(state, &apdu, data, &recv_len, sw);
+		logger->TraceInfo("1st _send_data: res=%d", res);
+		if (res != YKPIV_OK) {
+			return res;
+		}
+		else if (*sw != SW_SUCCESS && *sw >> 8 != 0x61) {
+			return YKPIV_OK;
+		}
+		if (*out_len + recv_len - 2 > max_out) {
+			if (1) {
+				logger->TraceInfo("Output buffer to small, wanted to write %lu, max was %lu.\n", *out_len + recv_len - 2, max_out);
+			}
+			return YKPIV_SIZE_ERROR;
+		}
+		if (out_data) {
+			memcpy(out_data, data, recv_len - 2);
+			out_data += recv_len - 2;
+			*out_len += recv_len - 2;
+		}
+		in_ptr += this_size;
+	} while (in_ptr < in_data + in_len);
+	while (*sw >> 8 == 0x61) {
+		APDU apdu;
+		unsigned char data[261];
+		unsigned long recv_len = sizeof(data);
+
+		if (1) { 
+			logger->TraceInfo("The card indicates there is %d bytes more data for us.\n", *sw & 0xff);
+		}
+
+		memset(apdu.raw, 0, sizeof(apdu.raw));
+		apdu.st.ins = 0xc0;
+		res = _send_data(state, &apdu, data, &recv_len, sw);
+		logger->TraceInfo("2nd _send_data: res=%d", res);
+		if (res != YKPIV_OK) {
+			return res;
+		}
+		else if (*sw != SW_SUCCESS && *sw >> 8 != 0x61) {
+			return YKPIV_OK;
+		}
+		if (*out_len + recv_len - 2 > max_out) {
+			logger->TraceInfo("Output buffer to small, wanted to write %lu, max was %lu.", *out_len + recv_len - 2, max_out);
+		}
+		if (out_data) {
+			memcpy(out_data, data, recv_len - 2);
+			out_data += recv_len - 2;
+			*out_len += recv_len - 2;
+		}
+	}
+
+	/*rc = SCardEndTransaction(state->card, SCARD_LEAVE_CARD);
+	if (rc != SCARD_S_SUCCESS) {
+	if (state->verbose) {
+	fprintf(stderr, "error: Failed to end pcsc transaction, rc=%08lx\n", rc);
+	}
+	return YKPIV_PCSC_ERROR;
+	}*/
+	return YKPIV_OK;
+}
+
+static ykpiv_rc _change_pin_internal(ykpiv_state *state, int action, const char * current_pin, size_t current_pin_len, const char * new_pin, size_t new_pin_len, int *tries) {
+	int sw;
+	unsigned char templ[] = { 0, YKPIV_INS_CHANGE_REFERENCE, 0, 0x80 };
+	unsigned char indata[0x10];
+	unsigned char data[0xff];
+	unsigned long recv_len = sizeof(data);
+	ykpiv_rc res;
+
+	logger->TraceInfo("_change_pin_internal");
+
+	if (current_pin_len > 8) {
+		return YKPIV_SIZE_ERROR;
+	}
+	if (new_pin_len > 8) {
+		return YKPIV_SIZE_ERROR;
+	}
+	if (action == CHREF_ACT_UNBLOCK_PIN) {
+		templ[1] = YKPIV_INS_RESET_RETRY;
+	} else if (action == CHREF_ACT_CHANGE_PUK) {
+		templ[3] = 0x81;
+	}
+	memcpy(indata, current_pin, current_pin_len);
+	if (current_pin_len < 8) {
+		memset(indata + current_pin_len, 0xff, 8 - current_pin_len);
+	}
+	memcpy(indata + 8, new_pin, new_pin_len);
+	if (new_pin_len < 8) {
+		memset(indata + 8 + new_pin_len, 0xff, 8 - new_pin_len);
+	}
+	res = _transfer_data(state, templ, indata, sizeof(indata), data, &recv_len, &sw);
+	if (res != YKPIV_OK) {
+		return res;
+	} else if (sw != SW_SUCCESS) {
+		if ((sw >> 8) == 0x63) {
+			*tries = sw & 0xf;
+			return YKPIV_WRONG_PIN;
+		}
+		else if (sw == SW_ERR_AUTH_BLOCKED) {
+			return YKPIV_PIN_LOCKED;
+		} else {
+			if (1) {
+				logger->TraceInfo("Failed changing pin, token response code: %x.\n", sw);
+			}
+			return YKPIV_GENERIC_ERROR;
+		}
+	}
+	return YKPIV_OK;
+}
+
+ykpiv_rc _change_pin(ykpiv_state *state, const char * current_pin, size_t current_pin_len, const char * new_pin, size_t new_pin_len, int *tries) {
+	return _change_pin_internal(state, CHREF_ACT_CHANGE_PIN, current_pin, current_pin_len, new_pin, new_pin_len, tries);
 }
 
 
@@ -47,7 +261,9 @@ CardAcquireContext(
 	__in	DWORD		dwFlags
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
+	ykpiv_state*	ykState;
+	SCARDCONTEXT	sCtx = SCARD_E_INVALID_HANDLE;
+	DWORD			dwRet = SCARD_S_SUCCESS;
 
 	char cardName[MAX_PATH] = { 0 };
 	wcstombs(cardName, pCardData->pwszCardName, wcslen(pCardData->pwszCardName));
@@ -121,25 +337,56 @@ CardAcquireContext(
 			if (logger) { logger->TraceInfo("CardAcquireContext failed - pCardData->hScard = NULL"); }
 			return SCARD_E_INVALID_HANDLE;
 		}
-
-		// call ykpiv library
-		ykpiv_state*	ykState;
-		ykpiv_rc		ykrc;
 		LONG			scrc;
-		ykrc = ykpiv_init(&ykState, FALSE);
-		scrc = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &ykState->context);
+
+		ykState = (ykpiv_state *)pCardData->pfnCspAlloc(sizeof(ykpiv_state));
+		if (NULL == ykState) {
+			return YKPIV_MEMORY_ERROR;
+		}
+		memset(ykState, 0, sizeof(ykpiv_state));
+		ykState->verbose = TRUE;
+
+		scrc = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &sCtx);
 		if (SCARD_S_SUCCESS != scrc) {
 			if (logger) { logger->TraceInfo("CardAcquireContext: SCardEstablishContext failed - ErrCode=%x", scrc); }
 			return SCARD_F_INTERNAL_ERROR;
 		}
+
 		// WARNING: NEVER call SCardConnect/SCardReconnect, it will hung up
+		ykState->context = sCtx;
 		ykState->card = pCardData->hScard;
+
 		if (logger) {
 			logger->TraceInfo("CardAcquireContext:     ykState->context = %x", ykState->context);
 			logger->TraceInfo("CardAcquireContext:        ykState->card = %x", ykState->card);
-			logger->TraceInfo("CardAcquireContext: pCardData->hSCardCtx = %x", pCardData->hSCardCtx);
+			logger->TraceInfo("CardAcquireContext: pCardData->pvVendorSpecific=%p", pCardData->pvVendorSpecific);
 		}
-		pCardData->pvVendorSpecific = ykState;
+
+		{
+			if (logger) { logger->TraceInfo("CardAcquireContext: _send_data with ins=0xa4"); }
+
+			APDU apdu;
+			unsigned char data[0xff];
+			unsigned long recv_len = sizeof(data);
+			int sw;
+			ykpiv_rc res;
+
+			memset(apdu.raw, 0, sizeof(apdu));
+			apdu.st.ins = 0xa4;
+			apdu.st.p1 = 0x04;
+			apdu.st.lc = sizeof(aid);
+			memcpy(apdu.st.data, aid, sizeof(aid));
+
+			if ((res = _send_data(ykState, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
+				if (logger) { logger->TraceInfo("CardAcquireContext: Failed communicating with card: %d", res); }
+			}
+			else if (sw == SW_SUCCESS) {
+				return YKPIV_OK;
+			}
+			else {
+				if (logger) { logger->TraceInfo("CardAcquireContext: Failed selecting application: %04x\n", sw); }
+			}
+		}
 	}
 
 	if (g_maxSpecVersion < pCardData->dwVersion)
@@ -192,17 +439,19 @@ CardDeleteContext(
 	__inout		PCARD_DATA	pCardData
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
+	ykpiv_state	ykState;
+
+	if (logger) { logger->TraceInfo("CardDeleteContext"); }
+
+	ykState.card = pCardData->hScard;
+	ykState.context = pCardData->hSCardCtx;
+
+	if (logger) { logger->TraceInfo("CardDeleteContext: SCardReleaseContext(ykState.context=%x)", ykState.context); }
+	LONG	scrc = SCardReleaseContext(ykState.context);
 	if (logger) {
-		logger->TraceInfo("CardDeleteContext");
+		logger->TraceInfo("CardDeleteContext: SCardReleaseContext returns %x", scrc);
 	}
-
-	ykpiv_state*	ykState = (ykpiv_state *)pCardData->pvVendorSpecific;
-	if (logger) { logger->TraceInfo("CardDeleteContext: ykState->context = %x", ykState->context);}
-	LONG	scrc = SCardReleaseContext(ykState->context);
-	if (logger) { logger->TraceInfo("CardDeleteContext: SCardReleaseContext - scrc=%x", scrc); }
-
-	return dwRet;
+	return SCARD_S_SUCCESS;
 } // of CardDeleteContext
 
 
@@ -277,7 +526,7 @@ CardGetContainerInfo(
 } // of CardGetContainerInfo
 
 
-  //CardAuthenticatePin
+//CardAuthenticatePin
 DWORD WINAPI
 CardAuthenticatePin(
 	__in					PCARD_DATA	pCardData,
@@ -369,8 +618,11 @@ CardChangeAuthenticator(
 	__out_opt PDWORD pcAttemptsRemaining
 )
 {
+	ykpiv_state	ykState;
 	ykpiv_rc	ykrc;
 	int			tries = 0;
+	char		oldpin[9] = { 0 };
+	char		newpin[9] = { 0 };
 
 	if (logger) {
 		logger->TraceInfo("CardChangeAuthenticator");
@@ -381,17 +633,22 @@ CardChangeAuthenticator(
 		logger->TraceInfo("szUserId=%s  cRetryCount=%d  dwFlags=0x%x  pcAttemptsRemaining=%d", szUserId, cRetryCount, dwFlags, *pcAttemptsRemaining);
 	}
 
-	ykpiv_state*	ykState = (ykpiv_state *)pCardData->pvVendorSpecific;
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
 	if (logger) {
-		logger->TraceInfo("CardChangeAuthenticator: state->context=0x%x", ykState->context);
+		logger->TraceInfo("CardChangeAuthenticator: ykState.context=0x%x", ykState.context);
 	}
-	ykrc = ykpiv_change_pin(
-				ykState,
-				(const char *)pbCurrentAuthenticator, (size_t)cbCurrentAuthenticator,
-				(const char *)pbNewAuthenticator, (size_t)cbNewAuthenticator,
+
+	memcpy(oldpin, (const char *)pbCurrentAuthenticator, 8);
+	memcpy(newpin, (const char *)pbNewAuthenticator, 8);
+	logger->TraceInfo("CardChangeAuthenticator: oldpin=%s  newpin=%s", oldpin, newpin);
+	ykrc = _change_pin(
+				&ykState,
+				(const char *)oldpin, 8,
+				(const char *)newpin, 8,
 				&tries);
 	if (logger) {
-		logger->TraceInfo("CardChangeAuthenticator: ykpiv_change_pin: ykrc=%d; tries=%d", ykrc, tries);
+		logger->TraceInfo("CardChangeAuthenticator: _change_pin: ykrc=%d; tries=%d", ykrc, tries);
 	}
 	return ykrc2mdrc(ykrc);
 } // of CardChangeAuthenticator
@@ -453,12 +710,15 @@ CardReadFile(
 	__out PDWORD pcbData
 )
 {
+	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
 		logger->TraceInfo("CardReadFile");
+		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
+		logger->TraceInfo("IN pszFileName: %s", pszFileName);
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 	}
 	if (!pCardData)
 		return SCARD_E_INVALID_PARAMETER;
-
 	if (!pszFileName)
 		return SCARD_E_INVALID_PARAMETER;
 	if (!strlen(pszFileName))
@@ -469,8 +729,60 @@ CardReadFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
+
+	//cardid
+	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
+		const char buf[] = {
+					0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+					0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+					};//dummy szCARD_IDENTIFIER_FILE value
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(buf));
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		*pcbData = (DWORD)sizeof(buf);
+		memcpy(*ppbData, buf, sizeof(buf));
+	}
+	//cardcf
+	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
+		const char buf[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };//dummy szCACHE_FILE value
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(buf));
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCACHE_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		*pcbData = (DWORD)sizeof(buf);
+		memcpy(*ppbData, buf, sizeof(buf));
+	}
+	//cmapfile
+	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
+		typedef struct _CONTAINERMAPRECORD {
+			BYTE GuidInfo[80];	// 40 x UNICODE char
+			BYTE Flags;		// Bit 1 set for default container
+			BYTE RFUPadding;
+			WORD ui16SigKeySize;
+			WORD ui16KeyExchangeKeySize;
+		} CONTAINERMAPRECORD;
+		CONTAINERMAPRECORD	cmaprec;//dummy szCONTAINER_MAP_FILE value
+		memset(&cmaprec, 0, sizeof(CONTAINERMAPRECORD));
+		cmaprec.Flags = 0x3;
+
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(CONTAINERMAPRECORD));
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCONTAINER_MAP_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		*pcbData = (DWORD)sizeof(CONTAINERMAPRECORD);
+		memcpy(*ppbData, &cmaprec, sizeof(CONTAINERMAPRECORD));
+	}
+	else {
+		logger->TraceInfo("CardReadFile: SCARD_E_FILE_NOT_FOUND");
+		dwRet = SCARD_E_FILE_NOT_FOUND;
+	}
 	
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardReadFile returns %x", dwRet);
+	return dwRet;
 }
 
 
