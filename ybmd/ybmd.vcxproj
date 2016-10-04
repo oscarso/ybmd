@@ -166,6 +166,7 @@
   <ItemGroup>
     <ClCompile Include="..\clogger\clogger.c" />
     <ClCompile Include="..\cpplogger\cpplogger.cpp" />
+    <ClCompile Include="..\_ykpiv\_ykpiv.c" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
