@@ -577,14 +577,17 @@ CardReadFile(
 
 	//cardid
 	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
+		const char buf[] = { 0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
+							 0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
 		*pcbData = (DWORD)16;
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(*pcbData);
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1+*pcbData);
 		if (!*ppbData) {
 			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
 			return SCARD_E_NO_MEMORY;
 		}
-		memset(*ppbData, 0, *pcbData);
-		memcpy(*ppbData, "4987967", strlen("4987967"));
+		memset(*ppbData, 0, 1+*pcbData);
+		//memcpy(*ppbData, "4987967         ", *pcbData);
+		memcpy(*ppbData, buf, *pcbData);
 	}
 	//cardcf
 	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
