@@ -113,7 +113,7 @@ CardAcquireContext(
 	char cardName[MAX_PATH] = { 0 };
 	wcstombs(cardName, pCardData->pwszCardName, wcslen(pCardData->pwszCardName));
 	if (logger) {
-		logger->TraceInfo("CardAcquireContext");
+		logger->TraceInfo("##### CardAcquireContext #####");
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 		logger->TraceInfo("IN pCardData->dwVersion: %d", pCardData->dwVersion);
 		logger->TraceInfo("IN pCardData->pbAtr:");
@@ -286,7 +286,7 @@ CardDeleteContext(
 {
 	ykpiv_state	ykState;
 
-	if (logger) { logger->TraceInfo("CardDeleteContext"); }
+	if (logger) { logger->TraceInfo("##### CardDeleteContext #####"); }
 
 	ykState.card = pCardData->hScard;
 	ykState.context = pCardData->hSCardCtx;
@@ -309,7 +309,7 @@ CardQueryCapabilities(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("CardQueryCapabilities");
+		logger->TraceInfo("##### CardQueryCapabilities #####");
 	}
 
 	return dwRet;
@@ -325,7 +325,7 @@ CardDeleteContainer(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardDeleteContainer");
+		logger->TraceInfo("##### CardDeleteContainer #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteContainer
@@ -343,7 +343,7 @@ CardCreateContainer(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardCreateContainer");
+		logger->TraceInfo("##### CardCreateContainer #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateContainer
@@ -359,7 +359,7 @@ CardGetContainerInfo(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardGetContainerInfo");
+		logger->TraceInfo("##### CardGetContainerInfo #####");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pContainerInfo) return SCARD_E_INVALID_PARAMETER;
@@ -383,7 +383,7 @@ CardAuthenticatePin(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("CardAuthenticatePin");
+		logger->TraceInfo("##### CardAuthenticatePin #####");
 	}
 
 	return dwRet;
@@ -399,7 +399,7 @@ CardGetChallenge(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardGetChallenge");
+		logger->TraceInfo("##### CardGetChallenge #####");
 	}
 	if (NULL == pCardData)
 		return SCARD_E_INVALID_PARAMETER;
@@ -422,7 +422,7 @@ CardAuthenticateChallenge(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardAuthenticateChallenge");
+		logger->TraceInfo("##### CardAuthenticateChallenge #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardAuthenticateChallenge
@@ -442,7 +442,7 @@ CardUnblockPin(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardUnblockPin");
+		logger->TraceInfo("##### CardUnblockPin #####");
 	}
 
 	return SCARD_S_SUCCESS;
@@ -470,7 +470,7 @@ CardChangeAuthenticator(
 	char		newpin[9] = { 0 };
 
 	if (logger) {
-		logger->TraceInfo("CardChangeAuthenticator");
+		logger->TraceInfo("##### CardChangeAuthenticator #####");
 		char szUserId[MAX_PATH] = { 0 };
 		wcstombs(szUserId, pwszUserId, wcslen(pwszUserId));
 		logger->PrintBuffer(pbCurrentAuthenticator, cbCurrentAuthenticator);
@@ -507,7 +507,7 @@ DWORD WINAPI CardCreateDirectory(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardCreateDirectory");
+		logger->TraceInfo("##### CardCreateDirectory #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateDirectory
@@ -521,7 +521,7 @@ CardDeleteDirectory(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardDeleteDirectory");
+		logger->TraceInfo("##### CardDeleteDirectory #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteDirectory
@@ -538,7 +538,7 @@ CardCreateFile(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardCreateFile");
+		logger->TraceInfo("##### CardCreateFile #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateFile
@@ -557,7 +557,7 @@ CardReadFile(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("CardReadFile");
+		logger->TraceInfo("##### CardReadFile #####");
 		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
 		logger->TraceInfo("IN pszFileName: %s", pszFileName);
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
@@ -646,7 +646,7 @@ DWORD WINAPI CardWriteFile(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("CardWriteFile");
+		logger->TraceInfo("##### CardWriteFile #####");
 		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
 		logger->TraceInfo("IN pszFileName: %s", pszFileName);
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
@@ -679,7 +679,7 @@ DWORD WINAPI CardDeleteFile(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardDeleteFile");
+		logger->TraceInfo("##### CardDeleteFile #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteFile
@@ -695,7 +695,7 @@ DWORD WINAPI CardEnumFiles(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardEnumFiles");
+		logger->TraceInfo("##### CardEnumFiles #####");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pmszFileNames) return SCARD_E_INVALID_PARAMETER;
@@ -716,7 +716,7 @@ CardGetFileInfo(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardGetFileInfo");
+		logger->TraceInfo("##### CardGetFileInfo #####");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pszFileName) return SCARD_E_INVALID_PARAMETER;
@@ -740,7 +740,7 @@ CardQueryFreeSpace(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardQueryFreeSpace");
+		logger->TraceInfo("##### CardQueryFreeSpace #####");
 	}
 	if (!pCardData)
 		return SCARD_E_INVALID_PARAMETER;
@@ -771,7 +771,7 @@ CardQueryKeySizes(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardQueryKeySizes");
+		logger->TraceInfo("##### CardQueryKeySizes #####");
 	}
 	if (!pCardData)
 		return SCARD_E_INVALID_PARAMETER;
@@ -804,7 +804,7 @@ CardSignData(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardSignData");
+		logger->TraceInfo("##### CardSignData #####");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pInfo) return SCARD_E_INVALID_PARAMETER;
@@ -821,7 +821,7 @@ CardRSADecrypt(
 )
 {
 	if (logger) {
-		logger->TraceInfo("CardRSADecrypt");
+		logger->TraceInfo("##### CardRSADecrypt #####");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pInfo) return SCARD_E_INVALID_PARAMETER;
@@ -865,7 +865,7 @@ CardCreateContainerEx(
 	__in PIN_ID  PinId)
 {
 	if (logger) {
-		logger->TraceInfo("CardCreateContainerEx");
+		logger->TraceInfo("##### CardCreateContainerEx #####");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateContainerEx
@@ -903,7 +903,7 @@ BOOL WINAPI DllMain(
 		case DLL_PROCESS_ATTACH:
 			logger = CPPLOGGER::CPPLogger::getInstance(CPPLOGGER::LogLevel_Info, LOG_PATH, "");
 			if (logger) {
-				logger->TraceInfo("DllMain");
+				logger->TraceInfo("----- DllMain -----");
 			}
 		break;
 
