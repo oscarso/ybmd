@@ -577,17 +577,14 @@ CardReadFile(
 
 	//cardid
 	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
-		const char buf[] = {
-					0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-					0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
-					};//dummy szCARD_IDENTIFIER_FILE value
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(buf));
+		*pcbData = (DWORD)16;
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(*pcbData);
 		if (!*ppbData) {
 			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
 			return SCARD_E_NO_MEMORY;
 		}
-		*pcbData = (DWORD)sizeof(buf);
-		memcpy(*ppbData, buf, sizeof(buf));
+		memset(*ppbData, 0, *pcbData);
+		memcpy(*ppbData, "4987967", strlen("4987967"));
 	}
 	//cardcf
 	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
@@ -598,7 +595,7 @@ CardReadFile(
 			return SCARD_E_NO_MEMORY;
 		}
 		*pcbData = (DWORD)sizeof(buf);
-		memcpy(*ppbData, buf, sizeof(buf));
+		memcpy(*ppbData, buf, *pcbData);
 	}
 	//cmapfile
 	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
@@ -619,14 +616,17 @@ CardReadFile(
 			return SCARD_E_NO_MEMORY;
 		}
 		*pcbData = (DWORD)sizeof(CONTAINERMAPRECORD);
-		memcpy(*ppbData, &cmaprec, sizeof(CONTAINERMAPRECORD));
-	}
-	else {
+		memcpy(*ppbData, &cmaprec, *pcbData);
+	} else {
 		logger->TraceInfo("CardReadFile: SCARD_E_FILE_NOT_FOUND");
 		dwRet = SCARD_E_FILE_NOT_FOUND;
 	}
-	
-	logger->TraceInfo("CardReadFile returns %x", dwRet);
+
+	if (logger) {
+		logger->TraceInfo("*ppbData:");
+		logger->PrintBuffer(*ppbData, *pcbData);
+		logger->TraceInfo("CardReadFile returns %x", dwRet);
+	}
 	return dwRet;
 }
 
