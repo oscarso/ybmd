@@ -50,8 +50,8 @@ DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 	case YKPIV_PARSE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER;
 		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PARSE_ERROR -> SCARD_E_INVALID_PARAMETER"); }
 		break;
-	case YKPIV_WRONG_PIN:				dwRet = SCARD_E_INVALID_CHV;
-		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_WRONG_PIN -> SCARD_E_INVALID_CHV"); }
+	case YKPIV_WRONG_PIN:				dwRet = SCARD_W_WRONG_CHV;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_WRONG_PIN -> SCARD_W_WRONG_CHV"); }
 		break;
 	case YKPIV_INVALID_OBJECT:			dwRet = SCARD_F_INTERNAL_ERROR;
 		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_INVALID_OBJECT -> SCARD_F_INTERNAL_ERROR"); }
@@ -99,6 +99,82 @@ static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 }
 
 
+ykpiv_rc _verify(ykpiv_state *state, const char *pin, int *tries) {
+	APDU apdu;
+	unsigned char data[261];
+	unsigned long recv_len = sizeof(data);
+	int sw;
+	size_t len = 0;
+	ykpiv_rc res;
+	if (pin) {
+		len = strlen(pin);
+	}
+
+	if (len > 8) {
+		return YKPIV_SIZE_ERROR;
+	}
+
+	memset(apdu.raw, 0, sizeof(apdu.raw));
+	apdu.st.ins = YKPIV_INS_VERIFY;
+	apdu.st.p1 = 0x00;
+	apdu.st.p2 = 0x80;
+	apdu.st.lc = pin ? 0x08 : 0;
+	if (pin) {
+		memcpy(apdu.st.data, pin, len);
+		if (len < 8) {
+			memset(apdu.st.data + len, 0xff, 8 - len);
+		}
+	}
+	if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
+		return res;
+	}
+	else if (sw == SW_SUCCESS) {
+		*tries = (sw & 0xf);
+		return YKPIV_OK;
+	}
+	else if ((sw >> 8) == 0x63) {
+		*tries = (sw & 0xf);
+		return YKPIV_WRONG_PIN;
+	}
+	else if (sw == SW_ERR_AUTH_BLOCKED) {
+		*tries = 0;
+		return YKPIV_WRONG_PIN;
+	}
+	else {
+		return YKPIV_GENERIC_ERROR;
+	}
+}
+
+
+ykpiv_rc _APDU_a4(ykpiv_state *state) {
+		APDU apdu;
+		unsigned char data[0xff];
+		unsigned long recv_len = sizeof(data);
+		int sw;
+		ykpiv_rc res = YKPIV_OK;
+
+		if (logger) { logger->TraceInfo("_APDU_a4: _send_data with ins=0xa4"); }
+
+		memset(apdu.raw, 0, sizeof(apdu));
+		apdu.st.ins = 0xa4;
+		apdu.st.p1 = 0x04;
+		apdu.st.lc = sizeof(aid);
+		memcpy(apdu.st.data, aid, sizeof(aid));
+
+		if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
+			if (logger) { logger->TraceInfo("_APDU_a4: Failed communicating with card: %d", res); }
+		}
+		else if (sw == SW_SUCCESS) {
+			res = YKPIV_OK;
+		}
+		else {
+			if (logger) { logger->TraceInfo("_APDU_a4: Failed selecting application: %04x\n", sw); }
+		}
+		if (logger) { logger->TraceInfo("_APDU_a4 returns %x\n", res); }
+		return res;
+}
+
+
 //CardAcquireContext
 DWORD WINAPI
 CardAcquireContext(
@@ -106,18 +182,19 @@ CardAcquireContext(
 	__in	DWORD		dwFlags
 )
 {
-	ykpiv_state*	ykState;
-	SCARDCONTEXT	sCtx = SCARD_E_INVALID_HANDLE;
-	DWORD			dwRet = SCARD_S_SUCCESS;
+	ykpiv_state	ykState;
+	DWORD		dwRet = SCARD_S_SUCCESS;
 
-	char cardName[MAX_PATH] = { 0 };
-	wcstombs(cardName, pCardData->pwszCardName, wcslen(pCardData->pwszCardName));
 	if (logger) {
-		logger->TraceInfo("##### CardAcquireContext #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardAcquireContext   #####");
+		logger->TraceInfo("##################################");
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 		logger->TraceInfo("IN pCardData->dwVersion: %d", pCardData->dwVersion);
 		logger->TraceInfo("IN pCardData->pbAtr:");
 		logger->PrintBuffer(pCardData->pbAtr, pCardData->cbAtr);
+		char cardName[MAX_PATH] = { 0 };
+		wcstombs(cardName, pCardData->pwszCardName, wcslen(pCardData->pwszCardName));
 		logger->TraceInfo("IN pCardData->pwszCardName: %s", cardName);
 		logger->TraceInfo("IN pCardData->pfnCspAlloc: %p", &(pCardData->pfnCspAlloc));
 		logger->TraceInfo("IN pCardData->pfnCspReAlloc: %p", &(pCardData->pfnCspReAlloc));
@@ -178,60 +255,26 @@ CardAcquireContext(
 			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspFree", __FUNCTION__, __LINE__); }
 			return SCARD_E_INVALID_PARAMETER;
 		}
+		if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+			if (logger) { logger->TraceInfo("CardAcquireContext failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+			return SCARD_E_INVALID_PARAMETER;
+		}
 		if (0 == pCardData->hScard) {
 			if (logger) { logger->TraceInfo("CardAcquireContext failed - pCardData->hScard = NULL"); }
-			return SCARD_E_INVALID_HANDLE;
-		}
-		LONG			scrc;
-
-		ykState = (ykpiv_state *)pCardData->pfnCspAlloc(sizeof(ykpiv_state));
-		if (NULL == ykState) {
-			return YKPIV_MEMORY_ERROR;
-		}
-		memset(ykState, 0, sizeof(ykpiv_state));
-		ykState->verbose = TRUE;
-
-		scrc = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &sCtx);
-		if (SCARD_S_SUCCESS != scrc) {
-			if (logger) { logger->TraceInfo("CardAcquireContext: SCardEstablishContext failed - ErrCode=%x", scrc); }
-			return SCARD_F_INTERNAL_ERROR;
+			return SCARD_E_INVALID_PARAMETER;
 		}
 
-		// WARNING: NEVER call SCardConnect/SCardReconnect, it will hung up
-		ykState->context = sCtx;
-		ykState->card = pCardData->hScard;
+		memset(&ykState, 0, sizeof(ykpiv_state));
+		ykState.verbose = TRUE;
+		ykState.context = pCardData->hSCardCtx;
+		ykState.card = pCardData->hScard;
 
 		if (logger) {
-			logger->TraceInfo("CardAcquireContext:     ykState->context = %x", ykState->context);
-			logger->TraceInfo("CardAcquireContext:        ykState->card = %x", ykState->card);
-			logger->TraceInfo("CardAcquireContext: pCardData->pvVendorSpecific=%p", pCardData->pvVendorSpecific);
+			logger->TraceInfo("CardAcquireContext:             ykState.context = %x", ykState.context);
+			logger->TraceInfo("CardAcquireContext:                ykState.card = %x", ykState.card);
+			logger->TraceInfo("CardAcquireContext: pCardData->pvVendorSpecific = %p", pCardData->pvVendorSpecific);
 		}
-
-		{
-			if (logger) { logger->TraceInfo("CardAcquireContext: _send_data with ins=0xa4"); }
-
-			APDU apdu;
-			unsigned char data[0xff];
-			unsigned long recv_len = sizeof(data);
-			int sw;
-			ykpiv_rc res;
-
-			memset(apdu.raw, 0, sizeof(apdu));
-			apdu.st.ins = 0xa4;
-			apdu.st.p1 = 0x04;
-			apdu.st.lc = sizeof(aid);
-			memcpy(apdu.st.data, aid, sizeof(aid));
-
-			if ((res = _send_data(ykState, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
-				if (logger) { logger->TraceInfo("CardAcquireContext: Failed communicating with card: %d", res); }
-			}
-			else if (sw == SW_SUCCESS) {
-				return YKPIV_OK;
-			}
-			else {
-				if (logger) { logger->TraceInfo("CardAcquireContext: Failed selecting application: %04x\n", sw); }
-			}
-		}
+		_APDU_a4(&ykState);
 	}
 
 	if (g_maxSpecVersion < pCardData->dwVersion)
@@ -286,16 +329,52 @@ CardDeleteContext(
 {
 	ykpiv_state	ykState;
 
-	if (logger) { logger->TraceInfo("##### CardDeleteContext #####"); }
-
-	ykState.card = pCardData->hScard;
-	ykState.context = pCardData->hSCardCtx;
-
-	if (logger) { logger->TraceInfo("CardDeleteContext: SCardReleaseContext(ykState.context=%x)", ykState.context); }
-	LONG	scrc = SCardReleaseContext(ykState.context);
 	if (logger) {
-		logger->TraceInfo("CardDeleteContext: SCardReleaseContext returns %x", scrc);
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardDeleteContext    #####");
+		logger->TraceInfo("###################################");
 	}
+
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardDeleteContext failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+
+	if (logger) {
+		logger->TraceInfo("CardDeleteContext: ykState.context = %x", ykState.context);
+		logger->TraceInfo("CardDeleteContext:    ykState.card = %x", ykState.card);
+	}
+
+	pCardData->pfnCardDeleteContext = NULL;
+	pCardData->pfnCardQueryCapabilities = NULL;
+	pCardData->pfnCardDeleteContainer = NULL;
+	pCardData->pfnCardCreateContainer = NULL;
+	pCardData->pfnCardGetContainerInfo = NULL;
+	pCardData->pfnCardAuthenticatePin = NULL;
+	pCardData->pfnCardGetChallenge = NULL;
+	pCardData->pfnCardAuthenticateChallenge = NULL;
+	pCardData->pfnCardUnblockPin = NULL;
+	pCardData->pfnCardChangeAuthenticator = NULL;
+	pCardData->pfnCardDeauthenticate = NULL;
+	pCardData->pfnCardCreateDirectory = NULL;
+	pCardData->pfnCardDeleteDirectory = NULL;
+	pCardData->pvUnused3 = NULL;
+	pCardData->pvUnused4 = NULL;
+	pCardData->pfnCardCreateFile = NULL;
+	pCardData->pfnCardReadFile = NULL;
+	pCardData->pfnCardWriteFile = NULL;
+	pCardData->pfnCardDeleteFile = NULL;
+	pCardData->pfnCardEnumFiles = NULL;
+	pCardData->pfnCardGetFileInfo = NULL;
+	pCardData->pfnCardQueryFreeSpace = NULL;
+	pCardData->pfnCardQueryKeySizes = NULL;
+	pCardData->pfnCardSignData = NULL;
+	pCardData->pfnCardRSADecrypt = NULL;
+	pCardData->pfnCardConstructDHAgreement = NULL;
+
 	return SCARD_S_SUCCESS;
 } // of CardDeleteContext
 
@@ -309,7 +388,14 @@ CardQueryCapabilities(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("##### CardQueryCapabilities #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardQueryCapabilities    #####");
+		logger->TraceInfo("#######################################");
+	}
+
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardQueryCapabilities failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
 	}
 
 	return dwRet;
@@ -325,8 +411,16 @@ CardDeleteContainer(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardDeleteContainer #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardDeleteContainer    #####");
+		logger->TraceInfo("#####################################");
 	}
+
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardDeleteContainer failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteContainer
 
@@ -343,8 +437,16 @@ CardCreateContainer(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardCreateContainer #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardCreateContainer    #####");
+		logger->TraceInfo("#####################################");
 	}
+
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardCreateContainer failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateContainer
 
@@ -359,13 +461,19 @@ CardGetContainerInfo(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardGetContainerInfo #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardGetContainerInfo    #####");
+		logger->TraceInfo("######################################");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pContainerInfo) return SCARD_E_INVALID_PARAMETER;
 	if (dwFlags) return SCARD_E_INVALID_PARAMETER;
 	if (pContainerInfo->dwVersion < 0 || pContainerInfo->dwVersion >  CONTAINER_INFO_CURRENT_VERSION)
 		return ERROR_REVISION_MISMATCH;
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardGetContainerInfo failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
 
 	return SCARD_S_SUCCESS;
 } // of CardGetContainerInfo
@@ -381,12 +489,63 @@ CardAuthenticatePin(
 	__out_opt				PDWORD		pcAttemptsRemaining
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
+	ykpiv_state	ykState;
+	ykpiv_rc	ykrc;
+	char		pin[9] = { 0 };
+	int			tries = 0;
+
 	if (logger) {
-		logger->TraceInfo("##### CardAuthenticatePin #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardAuthenticatePin    #####");
+		logger->TraceInfo("#####################################");
+		char userID[MAX_PATH] = { 0 };
+		wcstombs(userID, pwszUserId, wcslen(pwszUserId));
+		logger->TraceInfo("IN pwszUserId: %s", userID);
+		logger->TraceInfo("IN pbPin");
+		logger->PrintBuffer(pbPin, cbPin);
+		logger->TraceInfo("IN pcAttemptsRemaining: %p", pcAttemptsRemaining);
 	}
 
-	return dwRet;
+	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
+	if (!pbPin || 0 == cbPin) return SCARD_E_INVALID_PARAMETER;
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardAuthenticatePin failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+	if (logger) { logger->TraceInfo("CardAuthenticatePin: ykState.context=0x%x", ykState.context); }
+	
+	memcpy(pin, (const char *)pbPin, (cbPin > 8) ? 8 : cbPin);
+	if (logger) {
+		logger->PrintBuffer(pin, sizeof(pin));
+	}
+	ykrc = _verify(&ykState, (const char *)pin, &tries);
+	if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify - 1: ykrc=%d; tries=%d", ykrc, tries); }
+	if (YKPIV_OK != ykrc) {
+		//ykrc = _APDU_a4(&ykState);
+		//ykrc = _verify(&ykState, (const char *)pin, &tries);
+		//if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify - 2: ykrc=%d; tries=%d", ykrc, tries); }
+	}
+
+	if (pcAttemptsRemaining) {
+		// Since tries is always zero when calling ykpiv_verify with a valid PIN,
+		// setting pcAttemptsRemaining = -1 according to the Minidriver spec:
+		// Card modules that do not support a count of remaining authentication attempts
+		// should return a value of –1 for this parameter if the value of the parameter on
+		// input is not NULL.
+		*pcAttemptsRemaining = (DWORD)-1;
+		if (logger) { logger->TraceInfo("OUT pcAttemptsRemaining: %d", *pcAttemptsRemaining); }
+	}
+
+	if (ykrc != YKPIV_OK && NULL == pcAttemptsRemaining) {
+		// Function fail and no more attempts in retry
+		if (logger) { logger->TraceInfo("CardAuthenticatePin returns SCARD_W_CHV_BLOCKED"); }
+		return SCARD_W_CHV_BLOCKED;
+	} else {
+		return ykrc2mdrc(ykrc);
+	}
 }
 
 
@@ -399,7 +558,9 @@ CardGetChallenge(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardGetChallenge #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardGetChallenge    #####");
+		logger->TraceInfo("##################################");
 	}
 	if (NULL == pCardData)
 		return SCARD_E_INVALID_PARAMETER;
@@ -407,6 +568,10 @@ CardGetChallenge(
 		return SCARD_E_INVALID_PARAMETER;
 	if (NULL == pcbChallengeData)
 		return SCARD_E_INVALID_PARAMETER;
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardGetChallenge failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
 
 	return SCARD_S_SUCCESS;
 } // of CardGetChallenge
@@ -422,8 +587,15 @@ CardAuthenticateChallenge(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardAuthenticateChallenge #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardAuthenticateChallenge    #####");
+		logger->TraceInfo("###########################################");
 	}
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardAuthenticateChallenge failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardAuthenticateChallenge
 
@@ -442,7 +614,13 @@ CardUnblockPin(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardUnblockPin #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardUnblockPin    #####");
+		logger->TraceInfo("################################");
+	}
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardUnblockPin failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
 	}
 
 	return SCARD_S_SUCCESS;
@@ -470,12 +648,18 @@ CardChangeAuthenticator(
 	char		newpin[9] = { 0 };
 
 	if (logger) {
-		logger->TraceInfo("##### CardChangeAuthenticator #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardChangeAuthenticator    #####");
+		logger->TraceInfo("#########################################");
 		char szUserId[MAX_PATH] = { 0 };
 		wcstombs(szUserId, pwszUserId, wcslen(pwszUserId));
 		logger->PrintBuffer(pbCurrentAuthenticator, cbCurrentAuthenticator);
 		logger->PrintBuffer(pbNewAuthenticator, cbNewAuthenticator);
 		logger->TraceInfo("szUserId=%s  cRetryCount=%d  dwFlags=0x%x  pcAttemptsRemaining=%d", szUserId, cRetryCount, dwFlags, *pcAttemptsRemaining);
+	}
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardChangeAuthenticator failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
 	}
 
 	ykState.context = pCardData->hSCardCtx;
@@ -507,7 +691,9 @@ DWORD WINAPI CardCreateDirectory(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardCreateDirectory #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardCreateDirectory    #####");
+		logger->TraceInfo("#####################################");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateDirectory
@@ -521,7 +707,9 @@ CardDeleteDirectory(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardDeleteDirectory #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardDeleteDirectory    #####");
+		logger->TraceInfo("#####################################");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteDirectory
@@ -538,7 +726,9 @@ CardCreateFile(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardCreateFile #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardCreateFile    #####");
+		logger->TraceInfo("################################");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateFile
@@ -557,7 +747,9 @@ CardReadFile(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("##### CardReadFile #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardReadFile    #####");
+		logger->TraceInfo("##############################");
 		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
 		logger->TraceInfo("IN pszFileName: %s", pszFileName);
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
@@ -574,6 +766,10 @@ CardReadFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardReadFile failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
 
 	//cardid
 	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
@@ -586,7 +782,6 @@ CardReadFile(
 			return SCARD_E_NO_MEMORY;
 		}
 		memset(*ppbData, 0, 1+*pcbData);
-		//memcpy(*ppbData, "4987967         ", *pcbData);
 		memcpy(*ppbData, buf, *pcbData);
 	}
 	//cardcf
@@ -646,7 +841,9 @@ DWORD WINAPI CardWriteFile(
 {
 	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
-		logger->TraceInfo("##### CardWriteFile #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardWriteFile    #####");
+		logger->TraceInfo("###############################");
 		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
 		logger->TraceInfo("IN pszFileName: %s", pszFileName);
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
@@ -665,6 +862,10 @@ DWORD WINAPI CardWriteFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardWriteFile failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
 
 	return SCARD_E_UNSUPPORTED_FEATURE;
 }
@@ -679,7 +880,9 @@ DWORD WINAPI CardDeleteFile(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardDeleteFile #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardDeleteFile    #####");
+		logger->TraceInfo("################################");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteFile
@@ -695,7 +898,9 @@ DWORD WINAPI CardEnumFiles(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardEnumFiles #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardEnumFiles    #####");
+		logger->TraceInfo("###############################");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pmszFileNames) return SCARD_E_INVALID_PARAMETER;
@@ -716,7 +921,9 @@ CardGetFileInfo(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardGetFileInfo #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardGetFileInfo    #####");
+		logger->TraceInfo("#################################");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pszFileName) return SCARD_E_INVALID_PARAMETER;
@@ -740,22 +947,38 @@ CardQueryFreeSpace(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardQueryFreeSpace #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardQueryFreeSpace    #####");
+		logger->TraceInfo("####################################");
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 	}
 	if (!pCardData)
 		return SCARD_E_INVALID_PARAMETER;
 	if (!pCardFreeSpaceInfo)
 		return SCARD_E_INVALID_PARAMETER;
 	if (dwFlags)
-		return SCARD_E_INVALID_PARAMETER;
-
-	if (pCardFreeSpaceInfo->dwVersion != CARD_FREE_SPACE_INFO_CURRENT_VERSION && pCardFreeSpaceInfo->dwVersion != 0)
+		return SCARD_E_INVALID_PARAMETER;//must be zero
+	if (pCardFreeSpaceInfo->dwVersion != CARD_FREE_SPACE_INFO_CURRENT_VERSION
+		&&
+		pCardFreeSpaceInfo->dwVersion != 0) {
 		return ERROR_REVISION_MISMATCH;
+	}
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardQueryFreeSpace failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
 
 	pCardFreeSpaceInfo->dwVersion = CARD_FREE_SPACE_INFO_CURRENT_VERSION;
-	pCardFreeSpaceInfo->dwBytesAvailable = 0;
-	pCardFreeSpaceInfo->dwKeyContainersAvailable = 0;
+	pCardFreeSpaceInfo->dwBytesAvailable = 1000;
+	pCardFreeSpaceInfo->dwKeyContainersAvailable = 2;
 	pCardFreeSpaceInfo->dwMaxKeyContainers = 2;
+
+	if (logger) {
+		logger->TraceInfo("OUT dwVersion: %x", pCardFreeSpaceInfo->dwVersion);
+		logger->TraceInfo("OUT dwBytesAvailable: %x", pCardFreeSpaceInfo->dwBytesAvailable);
+		logger->TraceInfo("OUT dwKeyContainersAvailable: %x", pCardFreeSpaceInfo->dwKeyContainersAvailable);
+		logger->TraceInfo("OUT dwMaxKeyContainers: %x", pCardFreeSpaceInfo->dwMaxKeyContainers);
+	}
 
 	return SCARD_S_SUCCESS;
 } // of CardQueryFreeSpace
@@ -771,7 +994,9 @@ CardQueryKeySizes(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardQueryKeySizes #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardQueryKeySizes    #####");
+		logger->TraceInfo("###################################");
 	}
 	if (!pCardData)
 		return SCARD_E_INVALID_PARAMETER;
@@ -804,7 +1029,9 @@ CardSignData(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardSignData #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardSignData    #####");
+		logger->TraceInfo("##############################");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pInfo) return SCARD_E_INVALID_PARAMETER;
@@ -821,7 +1048,9 @@ CardRSADecrypt(
 )
 {
 	if (logger) {
-		logger->TraceInfo("##### CardRSADecrypt #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardRSADecrypt    #####");
+		logger->TraceInfo("################################");
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pInfo) return SCARD_E_INVALID_PARAMETER;
@@ -865,7 +1094,9 @@ CardCreateContainerEx(
 	__in PIN_ID  PinId)
 {
 	if (logger) {
-		logger->TraceInfo("##### CardCreateContainerEx #####");
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardCreateContainerEx    #####");
+		logger->TraceInfo("#######################################");
 	}
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateContainerEx
