@@ -146,14 +146,14 @@ ykpiv_rc _verify(ykpiv_state *state, const char *pin, int *tries) {
 }
 
 
-ykpiv_rc _APDU_a4(ykpiv_state *state) {
+ykpiv_rc selectApplet(ykpiv_state *state) {
 		APDU apdu;
 		unsigned char data[0xff];
 		unsigned long recv_len = sizeof(data);
 		int sw;
 		ykpiv_rc res = YKPIV_OK;
 
-		if (logger) { logger->TraceInfo("_APDU_a4: _send_data with ins=0xa4"); }
+		if (logger) { logger->TraceInfo("selectApplet: _send_data with ins=0xa4"); }
 
 		memset(apdu.raw, 0, sizeof(apdu));
 		apdu.st.ins = 0xa4;
@@ -162,16 +162,34 @@ ykpiv_rc _APDU_a4(ykpiv_state *state) {
 		memcpy(apdu.st.data, aid, sizeof(aid));
 
 		if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
-			if (logger) { logger->TraceInfo("_APDU_a4: Failed communicating with card: %d", res); }
+			if (logger) { logger->TraceInfo("selectApplet: Failed communicating with card: %d", res); }
 		}
 		else if (sw == SW_SUCCESS) {
 			res = YKPIV_OK;
 		}
 		else {
-			if (logger) { logger->TraceInfo("_APDU_a4: Failed selecting application: %04x\n", sw); }
+			if (logger) { logger->TraceInfo("selectApplet: Failed selecting application: %04x\n", sw); }
 		}
-		if (logger) { logger->TraceInfo("_APDU_a4 returns %x\n", res); }
+		if (logger) { logger->TraceInfo("selectApplet returns %x\n", res); }
 		return res;
+}
+
+
+BOOL shouldSelectApplet(ykpiv_state *state) {
+	int tries = 0;
+	ykpiv_rc ykrc = _verify(state, NULL, &tries);
+	if (logger) { logger->TraceInfo("shouldSelectApplet returns ykrc=%d\n", ykrc); }
+	return (ykrc != YKPIV_OK);
+}
+
+
+int getRetryCount(ykpiv_state *state) {
+	int tries = 0;
+	ykpiv_rc ykrc = _verify(state, NULL, &tries);
+	if (YKPIV_OK == ykrc) {
+		return tries;
+	}
+	return -1;
 }
 
 
@@ -274,7 +292,7 @@ CardAcquireContext(
 			logger->TraceInfo("CardAcquireContext:                ykState.card = %x", ykState.card);
 			logger->TraceInfo("CardAcquireContext: pCardData->pvVendorSpecific = %p", pCardData->pvVendorSpecific);
 		}
-		_APDU_a4(&ykState);
+		selectApplet(&ykState);
 	}
 
 	if (g_maxSpecVersion < pCardData->dwVersion)
@@ -516,26 +534,24 @@ CardAuthenticatePin(
 	ykState.context = pCardData->hSCardCtx;
 	ykState.card = pCardData->hScard;
 	if (logger) { logger->TraceInfo("CardAuthenticatePin: ykState.context=0x%x", ykState.context); }
-	
+
+	if (shouldSelectApplet(&ykState)) {
+		selectApplet(&ykState);
+	}
+
 	memcpy(pin, (const char *)pbPin, (cbPin > 8) ? 8 : cbPin);
 	if (logger) {
 		logger->PrintBuffer(pin, sizeof(pin));
 	}
+
 	ykrc = _verify(&ykState, (const char *)pin, &tries);
-	if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify - 1: ykrc=%d; tries=%d", ykrc, tries); }
 	if (YKPIV_OK != ykrc) {
-		//ykrc = _APDU_a4(&ykState);
-		//ykrc = _verify(&ykState, (const char *)pin, &tries);
-		//if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify - 2: ykrc=%d; tries=%d", ykrc, tries); }
+		if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify: ykrc=%d", ykrc); }
+		return ykrc2mdrc(ykrc);
 	}
 
 	if (pcAttemptsRemaining) {
-		// Since tries is always zero when calling ykpiv_verify with a valid PIN,
-		// setting pcAttemptsRemaining = -1 according to the Minidriver spec:
-		// Card modules that do not support a count of remaining authentication attempts
-		// should return a value of –1 for this parameter if the value of the parameter on
-		// input is not NULL.
-		*pcAttemptsRemaining = (DWORD)-1;
+		*pcAttemptsRemaining = (DWORD)getRetryCount(&ykState);
 		if (logger) { logger->TraceInfo("OUT pcAttemptsRemaining: %d", *pcAttemptsRemaining); }
 	}
 
@@ -867,7 +883,7 @@ DWORD WINAPI CardWriteFile(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
-	return SCARD_E_UNSUPPORTED_FEATURE;
+	return SCARD_S_SUCCESS;
 }
 
 
