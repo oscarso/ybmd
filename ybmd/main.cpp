@@ -16,6 +16,14 @@ HMODULE						g_hDll = 0;
 OSVERSIONINFO				g_osver;
 unsigned int				g_maxSpecVersion = 7;
 
+// Move into ykpiv.h later
+#define	YKPIV_OBJ_MSMD			0x5fd000
+#define YKPIV_OBJ_MSMDMSROOTS	(YKPIV_OBJ_MSMD + 1)
+#define	YKPIV_OBJ_MSMDCARDID	(YKPIV_OBJ_MSMD + 2) // Fixed Size: 16 bytes
+#define	YKPIV_OBJ_MSMDCARDCF	(YKPIV_OBJ_MSMD + 3) // Variable Size:  6 bytes - 8KB or more
+#define	YKPIV_OBJ_MSMDCARDAPPS	(YKPIV_OBJ_MSMD + 4) // Fixed Size:  8 bytes
+#define	YKPIV_OBJ_MSMDCMAPFILE	(YKPIV_OBJ_MSMD + 5) // Variable Size:  6 bytes - 8KB or more
+
 
 DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 	DWORD	dwRet;
@@ -153,7 +161,7 @@ ykpiv_rc selectApplet(ykpiv_state *state) {
 		int sw;
 		ykpiv_rc res = YKPIV_OK;
 
-		if (logger) { logger->TraceInfo("selectApplet: _send_data with ins=0xa4"); }
+		if (logger) { logger->TraceInfo("selectApplet: _send_data"); }
 
 		memset(apdu.raw, 0, sizeof(apdu));
 		apdu.st.ins = 0xa4;
@@ -172,6 +180,65 @@ ykpiv_rc selectApplet(ykpiv_state *state) {
 		}
 		if (logger) { logger->TraceInfo("selectApplet returns %x\n", res); }
 		return res;
+}
+
+
+ykpiv_rc selectAppletYubiKey(ykpiv_state *state) {
+	APDU apdu;
+	unsigned char data[0xff];
+	unsigned long recv_len = sizeof(data);
+	int sw;
+	//a0 00 00 05 27 20 01 01 
+	unsigned const char yk_applet[] = { 0xa0, 0x00, 0x00, 0x05, 0x27, 0x20, 0x01, 0x01 };
+	ykpiv_rc res = YKPIV_OK;
+
+	if (logger) { logger->TraceInfo("selectAppletYubiKey: _send_data"); }
+
+	memset(apdu.raw, 0, sizeof(apdu));
+	apdu.st.ins = 0xa4;
+	apdu.st.p1 = 0x04;
+	apdu.st.lc = sizeof(yk_applet);
+	memcpy(apdu.st.data, yk_applet, sizeof(yk_applet));
+
+	if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
+		if (logger) { logger->TraceInfo("selectAppletYubiKey: Failed communicating with card: %d", res); }
+	}
+	else if (sw == SW_SUCCESS) {
+		res = YKPIV_OK;
+	}
+	else {
+		if (logger) { logger->TraceInfo("selectAppletYubiKey: Failed selecting application: %04x\n", sw); }
+	}
+	if (logger) { logger->TraceInfo("selectAppletYubiKey returns %x\n", res); }
+	return res;
+}
+
+
+ykpiv_rc getSerialNumber(ykpiv_state *state) {
+	APDU apdu;
+	unsigned char data[0xff];
+	unsigned long recv_len = sizeof(data);
+	int sw;
+	unsigned const char get_serial[] = { 0x00, 0x01, 0x10, 0x00 };
+	ykpiv_rc res = YKPIV_OK;
+
+	if (logger) { logger->TraceInfo("getSerialNumber"); }
+
+	memset(apdu.raw, 0, sizeof(apdu.raw));
+	memcpy(apdu.raw, get_serial, sizeof(get_serial));
+
+	if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
+		if (logger) { logger->TraceInfo("getSerialNumber: Failed communicating with card: %d", res); }
+	}
+	else if (sw == SW_SUCCESS) {
+		res = YKPIV_OK;
+	}
+	else {
+		if (logger) { logger->TraceInfo("getSerialNumber: Failed selecting application: %04x\n", sw); }
+	}
+	if (logger) { logger->TraceInfo("getSerialNumber returns %x\n", res); }
+
+	return res;
 }
 
 
@@ -509,6 +576,7 @@ CardAuthenticatePin(
 {
 	ykpiv_state	ykState;
 	ykpiv_rc	ykrc;
+	char		key[24] = { 0 };
 	char		pin[9] = { 0 };
 	int			tries = 0;
 
@@ -540,6 +608,10 @@ CardAuthenticatePin(
 	}
 
 	memcpy(pin, (const char *)pbPin, (cbPin > 8) ? 8 : cbPin);
+	memcpy(key, pin, 8);
+	memcpy(&key[8], pin, 8);
+	memcpy(&key[16], pin, 8);
+
 	if (logger) {
 		logger->PrintBuffer(pin, sizeof(pin));
 	}
@@ -547,6 +619,12 @@ CardAuthenticatePin(
 	ykrc = _verify(&ykState, (const char *)pin, &tries);
 	if (YKPIV_OK != ykrc) {
 		if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify: ykrc=%d", ykrc); }
+		return ykrc2mdrc(ykrc);
+	}
+
+	ykrc = ykpiv_authenticate(&ykState, (const unsigned char *)key);
+	if (ykrc != YKPIV_OK) {
+		if (logger) { logger->TraceInfo("CardAuthenticatePin: ykpiv_authenticate: ykrc=%d", ykrc); }
 		return ykrc2mdrc(ykrc);
 	}
 
@@ -761,7 +839,13 @@ CardReadFile(
 	__out PDWORD pcbData
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
+	ykpiv_state		ykState;
+	ykpiv_rc		ykrc = YKPIV_OK;
+	DWORD			objID;
+	unsigned char	buf[2048];
+	unsigned long	buflen = 0;
+	DWORD			dwRet = SCARD_S_SUCCESS;
+
 	if (logger) {
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardReadFile    #####");
@@ -787,55 +871,51 @@ CardReadFile(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
-	//cardid
-	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
-		const char buf[] = { 0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
-							 0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
-		*pcbData = (DWORD)16;
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1+*pcbData);
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		memset(*ppbData, 0, 1+*pcbData);
-		memcpy(*ppbData, buf, *pcbData);
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+	if (logger) {
+		logger->TraceInfo("CardReadFile: ykState.context=0x%x", ykState.context);
 	}
-	//cardcf
-	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
-		const char buf[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };//dummy szCACHE_FILE value
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(buf));
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCACHE_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		*pcbData = (DWORD)sizeof(buf);
-		memcpy(*ppbData, buf, *pcbData);
+
+	//cardcf - YKPIV_OBJ_MSMDCARDCF
+	if (0 == strcmp(pszFileName, szCACHE_FILE)) {
+		objID = YKPIV_OBJ_MSMDCARDCF;
+
 	}
-	//cmapfile
+	//cardid - YKPIV_OBJ_MSMDCARDID
+	else if (0 == strcmp(pszFileName, szCARD_IDENTIFIER_FILE)) {
+		objID = YKPIV_OBJ_MSMDCARDID;
+		ykrc = selectAppletYubiKey(&ykState);
+		ykrc = getSerialNumber(&ykState);
+	}
+	//cmapfile - YKPIV_OBJ_MSMDCMAPFILE
 	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
-		typedef struct _CONTAINERMAPRECORD {
-			BYTE GuidInfo[80];	// 40 x UNICODE char
-			BYTE Flags;		// Bit 1 set for default container
-			BYTE RFUPadding;
-			WORD ui16SigKeySize;
-			WORD ui16KeyExchangeKeySize;
-		} CONTAINERMAPRECORD;
-		CONTAINERMAPRECORD	cmaprec;//dummy szCONTAINER_MAP_FILE value
-		memset(&cmaprec, 0, sizeof(CONTAINERMAPRECORD));
-		cmaprec.Flags = 0x3;
-
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(CONTAINERMAPRECORD));
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCONTAINER_MAP_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		*pcbData = (DWORD)sizeof(CONTAINERMAPRECORD);
-		memcpy(*ppbData, &cmaprec, *pcbData);
-	} else {
-		logger->TraceInfo("CardReadFile: SCARD_E_FILE_NOT_FOUND");
-		dwRet = SCARD_E_FILE_NOT_FOUND;
+		objID = YKPIV_OBJ_MSMDCMAPFILE;
+	}
+	//msroots - YKPIV_OBJ_MSMDMSROOTS
+	else if (strcmp(pszFileName, szROOT_STORE_FILE) == 0) {
+		objID = YKPIV_OBJ_MSMDMSROOTS;
+	}
+	else {
+		logger->TraceInfo("CardReadFile: SCARD_E_INVALID_PARAMETER");
+		dwRet = SCARD_E_INVALID_PARAMETER;
 	}
 
+	memset(buf, 0, sizeof(buf));
+	ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
+	if (ykrc != YKPIV_OK) {
+		logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d", ykrc);
+		return ykrc2mdrc(ykrc);
+	}
+	*pcbData = (DWORD)buflen;
+	*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + buflen);
+	if (!*ppbData) {
+		logger->TraceInfo("CardReadFile: SCARD_E_NO_MEMORY");
+		return SCARD_E_NO_MEMORY;
+	}
+	memset(*ppbData, 0, 1 + *pcbData);
+	memcpy(*ppbData, buf, *pcbData);
+ 
 	if (logger) {
 		logger->TraceInfo("*ppbData:");
 		logger->PrintBuffer(*ppbData, *pcbData);
@@ -855,7 +935,11 @@ DWORD WINAPI CardWriteFile(
 	__in DWORD cbData
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
+	ykpiv_state	ykState;
+	ykpiv_rc	ykrc;
+	DWORD		objID;
+	DWORD		dwRet = SCARD_S_SUCCESS;
+
 	if (logger) {
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardWriteFile    #####");
@@ -876,6 +960,8 @@ DWORD WINAPI CardWriteFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (0 == cbData)
 		return SCARD_E_INVALID_PARAMETER;
+	if (cbData > 2048) // > 2KB
+		return SCARD_E_WRITE_TOO_MANY;
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
 	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
@@ -883,6 +969,39 @@ DWORD WINAPI CardWriteFile(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+	if (logger) {
+		logger->TraceInfo("CardWriteFile: ykState.context=0x%x", ykState.context);
+	}
+
+	//cardcf - YKPIV_OBJ_MSMDCARDCF
+	if (0 == strcmp(pszFileName, szCACHE_FILE)) {
+		objID = YKPIV_OBJ_MSMDCARDCF;
+	}
+	//cardid - YKPIV_OBJ_MSMDCARDID
+	else if (0 == strcmp(pszFileName, szCARD_IDENTIFIER_FILE)) {
+		objID = YKPIV_OBJ_MSMDCARDID;
+	}
+	//cmapfile - YKPIV_OBJ_MSMDCMAPFILE
+	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
+		objID = YKPIV_OBJ_MSMDCMAPFILE;
+	}
+	//msroots - YKPIV_OBJ_MSMDMSROOTS
+	else if (strcmp(pszFileName, szROOT_STORE_FILE) == 0) {
+		objID = YKPIV_OBJ_MSMDMSROOTS;
+	}
+	else {
+		logger->TraceInfo("CardWriteFile: SCARD_E_INVALID_PARAMETER");
+		dwRet = SCARD_E_INVALID_PARAMETER;
+	}
+	ykrc = ykpiv_save_object(&ykState, objID, (unsigned char *)pbData, (size_t)cbData);
+	if (ykrc != YKPIV_OK) {
+		if (logger) { logger->TraceInfo("CardWriteFile failed - ykpiv_save_object"); }
+		return ykrc2mdrc(ykrc);
+	}
+
+	if (logger) { logger->TraceInfo("CardWriteFile passed"); }
 	return SCARD_S_SUCCESS;
 }
 
