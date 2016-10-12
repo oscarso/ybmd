@@ -845,6 +845,102 @@ CardCreateFile(
 } // of CardCreateFile
 
 
+#if 1
+  //CardReadFile
+DWORD WINAPI
+CardReadFile(
+	__in PCARD_DATA pCardData,
+	__in LPSTR pszDirectoryName,
+	__in LPSTR pszFileName,
+	__in DWORD dwFlags,
+	__deref_out_bcount(*pcbData) PBYTE *ppbData,
+	__out PDWORD pcbData
+)
+{
+	DWORD	dwRet = SCARD_S_SUCCESS;
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardReadFile    #####");
+		logger->TraceInfo("##############################");
+		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
+		logger->TraceInfo("IN pszFileName: %s", pszFileName);
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
+	}
+	if (!pCardData)
+		return SCARD_E_INVALID_PARAMETER;
+	if (!pszFileName)
+		return SCARD_E_INVALID_PARAMETER;
+	if (!strlen(pszFileName))
+		return SCARD_E_INVALID_PARAMETER;
+	if (!ppbData)
+		return SCARD_E_INVALID_PARAMETER;
+	if (!pcbData)
+		return SCARD_E_INVALID_PARAMETER;
+	if (dwFlags)
+		return SCARD_E_INVALID_PARAMETER;
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardReadFile failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
+	//cardid
+	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
+		const char buf[] = { 0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
+			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
+		*pcbData = (DWORD)16;
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + *pcbData);
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		memset(*ppbData, 0, 1 + *pcbData);
+		memcpy(*ppbData, buf, *pcbData);
+	}
+	//cardcf
+	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
+		const char buf[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };//dummy szCACHE_FILE value
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(buf));
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCACHE_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		*pcbData = (DWORD)sizeof(buf);
+		memcpy(*ppbData, buf, *pcbData);
+	}
+	//cmapfile
+	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
+		typedef struct _CONTAINERMAPRECORD {
+			BYTE GuidInfo[80];	// 40 x UNICODE char
+			BYTE Flags;		// Bit 1 set for default container
+			BYTE RFUPadding;
+			WORD ui16SigKeySize;
+			WORD ui16KeyExchangeKeySize;
+		} CONTAINERMAPRECORD;
+		CONTAINERMAPRECORD	cmaprec;//dummy szCONTAINER_MAP_FILE value
+		memset(&cmaprec, 0, sizeof(CONTAINERMAPRECORD));
+		cmaprec.Flags = 0x3;
+
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(CONTAINERMAPRECORD));
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCONTAINER_MAP_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		*pcbData = (DWORD)sizeof(CONTAINERMAPRECORD);
+		memcpy(*ppbData, &cmaprec, *pcbData);
+	}
+	else {
+		logger->TraceInfo("CardReadFile: SCARD_E_FILE_NOT_FOUND");
+		dwRet = SCARD_E_FILE_NOT_FOUND;
+	}
+
+	if (logger) {
+		logger->TraceInfo("*ppbData:");
+		logger->PrintBuffer(*ppbData, *pcbData);
+		logger->TraceInfo("CardReadFile returns %x", dwRet);
+	}
+	return dwRet;
+}
+#else
 //CardReadFile
 DWORD WINAPI
 CardReadFile(
@@ -976,6 +1072,7 @@ CardReadFile(
 	}
 	return dwRet;
 }
+#endif
 
 
 //CardWriteFile
