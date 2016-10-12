@@ -874,8 +874,12 @@ CardReadFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (!ppbData)
 		return SCARD_E_INVALID_PARAMETER;
-	if (!pcbData)
-		return SCARD_E_INVALID_PARAMETER;
+	if (NULL == pcbData) {
+		if (logger) { logger->TraceInfo("pcbData is NULL, read the entire file"); }
+	}
+	if (0 == *pcbData) {
+		if (logger) { logger->TraceInfo("pcbData is 0, read the entire file"); }
+	}
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
 	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
@@ -885,6 +889,7 @@ CardReadFile(
 
 	//cardid
 	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
+		/*
 		const char buf[] = { 0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
 			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
 		*pcbData = (DWORD)16;
@@ -895,6 +900,32 @@ CardReadFile(
 		}
 		memset(*ppbData, 0, 1 + *pcbData);
 		memcpy(*ppbData, buf, *pcbData);
+		*/
+		DWORD			objID;
+		ykpiv_state		ykState;
+		unsigned char	buf[2048];
+		ykpiv_rc	ykrc = YKPIV_OK;
+		objID = YKPIV_OBJ_MSMDCARDID;
+		ykrc = selectAppletYubiKey(&ykState);
+		if (ykrc != YKPIV_OK) { logger->TraceInfo("CardReadFile: selectAppletYubiKey failed. ykrc=%d", ykrc); }
+		ykrc = getSerialNumber(&ykState, (char *)&buf[0]);
+		*pcbData = (DWORD)16;
+		buf[*pcbData] = 0;
+		const char _buf[] = {	0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
+								0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
+		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + *pcbData);
+		if (!*ppbData) {
+			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
+			return SCARD_E_NO_MEMORY;
+		}
+		memset(*ppbData, 0, 1+*pcbData);
+		memcpy(*ppbData, _buf, *pcbData);
+		//logger->TraceInfo("CardReadFile: getSerialNumber - buf=%s", buf);
+		ykrc = YKPIV_OK;
+		if (shouldSelectApplet(&ykState)) {
+			ykrc = selectApplet(&ykState);
+			if (ykrc != YKPIV_OK) { logger->TraceInfo("CardReadFile: selectApplet failed. ykrc=%d", ykrc); }
+		}
 	}
 	//cardcf
 	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
