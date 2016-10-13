@@ -80,6 +80,149 @@ DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 	return dwRet;
 }
 
+#if 1
+static int set_length(unsigned char *buffer, size_t length) {
+	if (length < 0x80) {
+		*buffer++ = length;
+		return 1;
+	}
+	else if (length < 0xff) {
+		*buffer++ = 0x81;
+		*buffer++ = length;
+		return 2;
+	}
+	else {
+		*buffer++ = 0x82;
+		*buffer++ = (length >> 8) & 0xff;
+		*buffer++ = length & 0xff;
+		return 3;
+	}
+}
+ykpiv_rc _import_private_key(
+			ykpiv_state *state,
+			const unsigned char key,
+			unsigned char algorithm,
+			const unsigned char *p, size_t p_len,
+			const unsigned char *q, size_t q_len,
+			const unsigned char *dp, size_t dp_len,
+			const unsigned char *dq, size_t dq_len,
+			const unsigned char *qinv, size_t qinv_len,
+			const unsigned char *ec_data, unsigned char ec_data_len,
+			const unsigned char pin_policy,
+			const unsigned char touch_policy)
+{
+	unsigned char key_data[1024];
+	unsigned char *in_ptr = key_data;
+	unsigned char templ[] = { 0, YKPIV_INS_IMPORT_KEY, algorithm, key };
+	unsigned char data[256];
+	unsigned long recv_len = sizeof(data);
+	unsigned elem_len;
+	int sw;
+	const unsigned char *params[5];
+	size_t lens[5];
+	size_t padding;
+	unsigned char n_params;
+	int i;
+	int param_tag;
+
+	if (state == NULL)
+		return YKPIV_GENERIC_ERROR;
+
+	if (key == YKPIV_KEY_CARDMGM ||
+		key < YKPIV_KEY_RETIRED1 ||
+		(key > YKPIV_KEY_RETIRED20 && key < YKPIV_KEY_AUTHENTICATION) ||
+		(key > YKPIV_KEY_CARDAUTH && key != YKPIV_KEY_ATTESTATION)) {
+		return YKPIV_KEY_ERROR;
+	}
+
+	if (pin_policy != YKPIV_PINPOLICY_DEFAULT &&
+		pin_policy != YKPIV_PINPOLICY_NEVER &&
+		pin_policy != YKPIV_PINPOLICY_ONCE &&
+		pin_policy != YKPIV_PINPOLICY_ALWAYS)
+		return YKPIV_GENERIC_ERROR;
+
+	if (touch_policy != YKPIV_TOUCHPOLICY_DEFAULT &&
+		touch_policy != YKPIV_TOUCHPOLICY_NEVER &&
+		touch_policy != YKPIV_TOUCHPOLICY_ALWAYS &&
+		touch_policy != YKPIV_TOUCHPOLICY_CACHED)
+		return YKPIV_GENERIC_ERROR;
+
+	if (algorithm == YKPIV_ALGO_RSA1024 || algorithm == YKPIV_ALGO_RSA2048) {
+
+		if (algorithm == YKPIV_ALGO_RSA1024)
+			elem_len = 64;
+		if (algorithm == YKPIV_ALGO_RSA2048)
+			elem_len = 128;
+
+		if (p == NULL || q == NULL || dp == NULL ||
+			dq == NULL || qinv == NULL)
+			return YKPIV_GENERIC_ERROR;
+
+		params[0] = p;
+		lens[0] = p_len;
+		params[1] = q;
+		lens[1] = q_len;
+		params[2] = dp;
+		lens[2] = dp_len;
+		params[3] = dq;
+		lens[3] = dq_len;
+		params[4] = qinv;
+		lens[4] = qinv_len;
+		param_tag = 0x01;
+
+		n_params = 5;
+	}
+	else if (algorithm == YKPIV_ALGO_ECCP256 || algorithm == YKPIV_ALGO_ECCP384) {
+		if (algorithm == YKPIV_ALGO_ECCP256)
+			elem_len = 32;
+		if (algorithm == YKPIV_ALGO_ECCP384)
+			elem_len = 48;
+
+		if (ec_data == NULL)
+			return YKPIV_GENERIC_ERROR;
+
+		params[0] = ec_data;
+		lens[0] = ec_data_len;
+		param_tag = 0x06;
+		n_params = 1;
+	}
+	else
+		return YKPIV_ALGORITHM_ERROR;
+
+	for (i = 0; i < n_params; i++) {
+		*in_ptr++ = param_tag + i;
+		in_ptr += set_length(in_ptr, elem_len);
+		padding = elem_len - lens[i];
+		memset(in_ptr, 0, padding);
+		in_ptr += padding;
+		memcpy(in_ptr, params[i], lens[i]);
+		in_ptr += lens[i];
+	}
+
+	if (pin_policy != YKPIV_PINPOLICY_DEFAULT) {
+		*in_ptr++ = YKPIV_PINPOLICY_TAG;
+		*in_ptr++ = 0x01;
+		*in_ptr++ = pin_policy;
+	}
+
+	if (touch_policy != YKPIV_TOUCHPOLICY_DEFAULT) {
+		*in_ptr++ = YKPIV_TOUCHPOLICY_TAG;
+		*in_ptr++ = 0x01;
+		*in_ptr++ = touch_policy;
+	}
+
+	if (ykpiv_transfer_data(state, templ, key_data, in_ptr - key_data, data, &recv_len, &sw) != YKPIV_OK)
+		return YKPIV_GENERIC_ERROR;
+
+	if (sw == SW_ERR_SECURITY_STATUS)
+		return YKPIV_AUTHENTICATION_ERROR;
+
+	if (sw != SW_SUCCESS)
+		return YKPIV_GENERIC_ERROR;
+
+	return YKPIV_OK;
+}
+#endif
 
 #if 1
 static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
@@ -544,7 +687,7 @@ const char* keySpec2String(DWORD dwKeySpec) {
 	case AT_ECDHE_P384: return "AT_ECDHE_P384";
 	case AT_ECDHE_P521: return "AT_ECDHE_P521";
 	default:
-		return "UNDEFINED";
+		return NULL;
 	}
 }
 const char* createContainerFlag2String(DWORD dwFlags) {
@@ -552,10 +695,80 @@ const char* createContainerFlag2String(DWORD dwFlags) {
 	case CARD_CREATE_CONTAINER_KEY_GEN: return "CARD_CREATE_CONTAINER_KEY_GEN";
 	case CARD_CREATE_CONTAINER_KEY_IMPORT: return "CARD_CREATE_CONTAINER_KEY_IMPORT";
 	default:
-		return "UNDEFINED";
+		return NULL;
+	}
+}
+BOOL isValidKeySize(DWORD dwKeySize) {
+	switch (dwKeySize) {
+	case 128: return TRUE;
+	case 256: return TRUE;
+	case 512: return TRUE;
+	case 1024: return TRUE;
+	case 2048: return TRUE;
+	case 4096: return TRUE;
+	default:
+		return FALSE;
 	}
 }
 
+void ReverseBuffer(LPBYTE pbData, DWORD cbData)
+{
+	DWORD i;
+	for (i = 0; i<(cbData / 2); i++)
+	{
+		BYTE t = pbData[i];
+		pbData[i] = pbData[cbData - 1 - i];
+		pbData[cbData - 1 - i] = t;
+	}
+}
+void logPrivateKeyBlob(LPBYTE pbBlob)
+{
+	//Reference: https://www.idrix.fr/Root/Samples/pfx_parse.cpp
+	LPBYTE pbModulus, pbPrime1, pbPrime2, pbExp1, pbExp2, pbCoeff, pbPriExp;
+	DWORD cbModulus, cbPrime1, cbPrime2, cbExp1, cbExp2, cbCoeff, cbPriExp;
+	RSAPUBKEY* pRsa = (RSAPUBKEY *)(pbBlob + sizeof(BLOBHEADER));
+	LPBYTE pbKeyData = pbBlob + sizeof(BLOBHEADER) + sizeof(RSAPUBKEY);
+
+	cbModulus = (pRsa->bitlen + 7) / 8;
+	cbPriExp = cbModulus;
+	cbPrime1 = cbPrime2 = cbExp1 = cbExp2 = cbCoeff = cbModulus / 2;
+	pbModulus = pbKeyData;
+	pbPrime1 = pbModulus + cbModulus;
+	pbPrime2 = pbPrime1 + cbPrime1;
+	pbExp1 = pbPrime2 + cbPrime2;
+	pbExp2 = pbExp1 + cbExp1;
+	pbCoeff = pbExp2 + cbExp2;
+	pbPriExp = pbCoeff + cbCoeff;
+
+	ReverseBuffer(pbModulus, cbModulus);
+	ReverseBuffer(pbPrime1, cbPrime1);
+	ReverseBuffer(pbPrime2, cbPrime2);
+	ReverseBuffer(pbExp1, cbExp1);
+	ReverseBuffer(pbExp2, cbExp2);
+	ReverseBuffer(pbCoeff, cbCoeff);
+	ReverseBuffer(pbPriExp, cbPriExp);
+
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("Private Key Details:\n");
+		logger->TraceInfo("=> RSA Bit Length = %d\n", pRsa->bitlen);
+		logger->TraceInfo("=> Public Exponent = 0x%.8X\n", pRsa->pubexp);
+		logger->TraceInfo("=> Modulus = ");
+		logger->PrintBuffer(pbModulus, cbModulus);
+		logger->TraceInfo("=> Private Exponent = ");
+		logger->PrintBuffer(pbPriExp, cbPriExp);
+		logger->TraceInfo("=> P:");
+		logger->PrintBuffer(pbPrime1, cbPrime1);
+		logger->TraceInfo("=> Q:");
+		logger->PrintBuffer(pbPrime2, cbPrime2);
+		logger->TraceInfo("=> DP:");
+		logger->PrintBuffer(pbExp1, cbExp1);
+		logger->TraceInfo("=> DQ:");
+		logger->PrintBuffer(pbExp2, cbExp2);
+		logger->TraceInfo("=> Coefficient:");
+		logger->PrintBuffer(pbCoeff, cbCoeff);
+	}
+}
 //CardCreateContainer
 DWORD WINAPI
 CardCreateContainer(
@@ -572,19 +785,35 @@ CardCreateContainer(
 		logger->TraceInfo("#####    CardCreateContainer    #####");
 		logger->TraceInfo("#####################################");
 		logger->TraceInfo("IN bContainerIndex: %d", bContainerIndex);
-		logger->TraceInfo("IN dwFlags: %s", createContainerFlag2String(dwFlags));
+		logger->TraceInfo("IN dwFlags: %d , %s", dwFlags, createContainerFlag2String(dwFlags));
 		logger->TraceInfo("IN dwKeySpec: %s", keySpec2String(dwKeySpec));
 		logger->TraceInfo("IN dwKeySize: %d", dwKeySize);
 		logger->TraceInfo("IN pbKeyData");
-		logger->PrintBuffer(pbKeyData, 256);
+		logPrivateKeyBlob(pbKeyData);
 	}
-
+	if (!createContainerFlag2String(dwFlags)) {
+		return SCARD_E_INVALID_PARAMETER;
+	}
+	if (!keySpec2String(dwKeySpec)) {
+		return SCARD_E_INVALID_PARAMETER;
+	}
+	if (!isValidKeySize(dwKeySize)) {
+		return SCARD_E_INVALID_PARAMETER;
+	}
 	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
 		if (logger) { logger->TraceInfo("CardCreateContainer failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
-	return SCARD_E_UNSUPPORTED_FEATURE;
+	switch (dwFlags) {
+	case CARD_CREATE_CONTAINER_KEY_IMPORT:
+		break;
+	case CARD_CREATE_CONTAINER_KEY_GEN:
+		break;
+	}
+	//YKPIV_KEY_RETIRED1
+
+	return SCARD_S_SUCCESS;
 } // of CardCreateContainer
 
 
@@ -1206,7 +1435,7 @@ DWORD WINAPI CardWriteFile(
 		if (logger) { logger->TraceInfo("CardWriteFile failed because ykpiv_fetch_object failed with error: %d", ykrc); }
 	} else {
 		buflen = *((DWORD *)&buf[0]);
-		if (logger) { logger->PrintBuffer(buf, buflen); }
+		if (logger) { logger->PrintBuffer(buf, buflen + SZ_MAX_LEN); }
 	}
 #endif
 
