@@ -10,6 +10,8 @@
 
 
 // Global Variables
+#define	SZ_MAX_PAGE			2048 //max size in bytes per flash page
+#define	SZ_MAX_LEN			sizeof(DWORD) //max size in bytes to store the length of write data
 #define	LOG_PATH			"C:\\Logs\\"
 CPPLOGGER::CPPLogger*		logger = NULL;
 HMODULE						g_hDll = 0;
@@ -79,6 +81,7 @@ DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 }
 
 
+#if 1
 static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 	unsigned char *data, unsigned long *recv_len, int *sw) {
 	long rc;
@@ -107,8 +110,9 @@ static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 	}
 	return YKPIV_OK;
 }
+#endif
 
-
+#if 0
 ykpiv_rc _verify(ykpiv_state *state, const char *pin, int *tries) {
 	APDU apdu;
 	unsigned char data[261];
@@ -154,6 +158,7 @@ ykpiv_rc _verify(ykpiv_state *state, const char *pin, int *tries) {
 		return YKPIV_GENERIC_ERROR;
 	}
 }
+#endif
 
 
 ykpiv_rc selectApplet(ykpiv_state *state) {
@@ -257,7 +262,7 @@ ykpiv_rc getSerialNumber(ykpiv_state *state, char* pSerial) {
 
 BOOL shouldSelectApplet(ykpiv_state *state) {
 	int tries = 0;
-	ykpiv_rc ykrc = _verify(state, NULL, &tries);
+	ykpiv_rc ykrc = ykpiv_verify(state, NULL, &tries);
 	if (logger) { logger->TraceInfo("shouldSelectApplet returns ykrc=%d\n", ykrc); }
 	return (ykrc != YKPIV_OK);
 }
@@ -265,7 +270,7 @@ BOOL shouldSelectApplet(ykpiv_state *state) {
 
 int getRetryCount(ykpiv_state *state) {
 	int tries = 0;
-	ykpiv_rc ykrc = _verify(state, NULL, &tries);
+	ykpiv_rc ykrc = ykpiv_verify(state, NULL, &tries);
 	if (YKPIV_OK == ykrc) {
 		return tries;
 	}
@@ -663,7 +668,7 @@ CardAuthenticatePin(
 		logger->PrintBuffer(pin, sizeof(pin));
 	}
 
-	ykrc = _verify(&ykState, (const char *)pin, &tries);
+	ykrc = ykpiv_verify(&ykState, (const char *)pin, &tries);
 	if (YKPIV_OK != ykrc) {
 		if (logger) { logger->TraceInfo("CardAuthenticatePin: _verify: ykrc=%d", ykrc); }
 		return ykrc2mdrc(ykrc);
@@ -991,7 +996,7 @@ CardReadFile(
 	ykpiv_state		ykState;
 	ykpiv_rc		ykrc = YKPIV_OK;
 	DWORD			objID;
-	unsigned char	buf[2049];
+	unsigned char	buf[SZ_MAX_PAGE + SZ_MAX_LEN + 1];
 	DWORD			buflen = sizeof(buf)-1;
 	DWORD			dwRet = SCARD_S_SUCCESS;
 
@@ -1036,7 +1041,8 @@ CardReadFile(
 	if (0 == strcmp(pszFileName, szCACHE_FILE)) {
 		objID = YKPIV_OBJ_MSMDCARDCF;
 		ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
-		if (ykrc != YKPIV_OK) {
+		buflen = *((DWORD *)&buf[0]);
+		if (ykrc != YKPIV_OK || 0 == buflen) {
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 6;
 			memset(buf, 0, buflen);
@@ -1051,13 +1057,15 @@ CardReadFile(
 			0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
 			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
 		buflen = sizeof(class_guid);
-		memcpy(buf, class_guid, buflen);
+		memcpy(buf, (DWORD *)&buflen, SZ_MAX_LEN);
+		memcpy(&buf[SZ_MAX_LEN], class_guid, buflen);
 	}
 	//cardapps - YKPIV_OBJ_MSMDCARDAPPS
 	else if (0 == strcmp(pszFileName, szCARD_APPS)) {
 		objID = YKPIV_OBJ_MSMDCARDAPPS;
 		ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
-		if (ykrc != YKPIV_OK) {
+		buflen = *((DWORD *)&buf[0]);
+		if (ykrc != YKPIV_OK || 0 == buflen) {
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 8;
 			memcpy(buf, "mscp", 4);
@@ -1069,7 +1077,8 @@ CardReadFile(
 	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
 		objID = YKPIV_OBJ_MSMDCMAPFILE;
 		ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
-		if (ykrc != YKPIV_OK) {
+		buflen = *((DWORD *)&buf[0]);
+		if (ykrc != YKPIV_OK || 0 == buflen) {
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 0;
 			ykrc = YKPIV_OK;
@@ -1079,7 +1088,8 @@ CardReadFile(
 	else if (strcmp(pszFileName, szROOT_STORE_FILE) == 0) {
 		objID = YKPIV_OBJ_MSMDMSROOTS;
 		ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
-		if (ykrc != YKPIV_OK) {
+		buflen = *((DWORD *)&buf[0]);
+		if (ykrc != YKPIV_OK || 0 == buflen) {
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 0;
 			ykrc = YKPIV_OK;
@@ -1090,14 +1100,14 @@ CardReadFile(
 		dwRet = SCARD_E_INVALID_PARAMETER;
 	}
 
-	*pcbData = (DWORD)buflen;
-	*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + buflen);
+	*pcbData = buflen;
+	*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + *pcbData);
 	if (!*ppbData) {
 		logger->TraceInfo("CardReadFile: SCARD_E_NO_MEMORY");
 		return SCARD_E_NO_MEMORY;
 	}
-	memset(*ppbData, 0, 1 + *pcbData);
-	memcpy(*ppbData, buf, *pcbData);
+	memset(*ppbData, 0, *pcbData);
+	memcpy(*ppbData, &buf[SZ_MAX_LEN], *pcbData);
  
 	if (logger) {
 		logger->TraceInfo("*ppbData:");
@@ -1144,7 +1154,7 @@ DWORD WINAPI CardWriteFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (0 == cbData)
 		return SCARD_E_INVALID_PARAMETER;
-	if (cbData > 2048) // > 2KB
+	if (cbData > SZ_MAX_PAGE)
 		return SCARD_E_WRITE_TOO_MANY;
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
@@ -1179,20 +1189,23 @@ DWORD WINAPI CardWriteFile(
 		logger->TraceInfo("CardWriteFile: SCARD_E_INVALID_PARAMETER");
 		dwRet = SCARD_E_INVALID_PARAMETER;
 	}
-	ykrc = ykpiv_save_object(&ykState, objID, (unsigned char *)pbData, (size_t)cbData);
+	unsigned char* pBufWrite = (unsigned char *)pCardData->pfnCspAlloc(1 + cbData + SZ_MAX_LEN);
+	memcpy(pBufWrite, (DWORD *)&cbData, SZ_MAX_LEN);
+	memcpy(&pBufWrite[SZ_MAX_LEN], (unsigned char *)pbData, cbData);
+	ykrc = ykpiv_save_object(&ykState, objID, pBufWrite, cbData + SZ_MAX_LEN);
 	if (ykrc != YKPIV_OK) {
-		if (logger) { logger->TraceInfo("CardWriteFile failed - ykpiv_save_object"); }
+		if (logger) { logger->TraceInfo("CardWriteFile failed - ykpiv_save_object - Bytes to be written: %d", cbData + SZ_MAX_LEN); }
 		return ykrc2mdrc(ykrc);
 	}
 #if 1 //verify write
-	unsigned char	buf[9999];
-	unsigned long	buflen = sizeof(buf) - 1;
-	memset(buf, 0, buflen);
-	buflen = cbData;
+	unsigned char	buf[SZ_MAX_PAGE + SZ_MAX_LEN + 1];
+	DWORD			buflen = sizeof(buf)-1;
+	memset(buf, 0, sizeof(buf));
 	ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
 	if (ykrc != YKPIV_OK) {
-		if (logger) { logger->TraceInfo("CardWriteFile failed because ykpiv_fetch_object failed"); }
+		if (logger) { logger->TraceInfo("CardWriteFile failed because ykpiv_fetch_object failed with error: %d", ykrc); }
 	} else {
+		buflen = *((DWORD *)&buf[0]);
 		if (logger) { logger->PrintBuffer(buf, buflen); }
 	}
 #endif
