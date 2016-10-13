@@ -527,6 +527,30 @@ CardDeleteContainer(
 } // of CardDeleteContainer
 
 
+
+const char* keySpec2String(DWORD dwKeySpec) {
+	switch (dwKeySpec) {
+	case AT_KEYEXCHANGE: return "AT_KEYEXCHANGE";
+	case AT_SIGNATURE: return "AT_SIGNATURE";
+	case AT_ECDSA_P256: return "AT_ECDSA_P256";
+	case AT_ECDSA_P384: return "AT_ECDSA_P384";
+	case AT_ECDSA_P521: return "AT_ECDSA_P521";
+	case AT_ECDHE_P256: return "AT_ECDHE_P256";
+	case AT_ECDHE_P384: return "AT_ECDHE_P384";
+	case AT_ECDHE_P521: return "AT_ECDHE_P521";
+	default:
+		return "UNDEFINED";
+	}
+}
+const char* createContainerFlag2String(DWORD dwFlags) {
+	switch (dwFlags) {
+	case CARD_CREATE_CONTAINER_KEY_GEN: return "CARD_CREATE_CONTAINER_KEY_GEN";
+	case CARD_CREATE_CONTAINER_KEY_IMPORT: return "CARD_CREATE_CONTAINER_KEY_IMPORT";
+	default:
+		return "UNDEFINED";
+	}
+}
+
 //CardCreateContainer
 DWORD WINAPI
 CardCreateContainer(
@@ -542,6 +566,12 @@ CardCreateContainer(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardCreateContainer    #####");
 		logger->TraceInfo("#####################################");
+		logger->TraceInfo("IN bContainerIndex: %d", bContainerIndex);
+		logger->TraceInfo("IN dwFlags: %s", createContainerFlag2String(dwFlags));
+		logger->TraceInfo("IN dwKeySpec: %s", keySpec2String(dwKeySpec));
+		logger->TraceInfo("IN dwKeySize: %d", dwKeySize);
+		logger->TraceInfo("IN pbKeyData");
+		logger->PrintBuffer(pbKeyData, 256);
 	}
 
 	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
@@ -845,7 +875,7 @@ CardCreateFile(
 } // of CardCreateFile
 
 
-#if 1
+#if 0
   //CardReadFile
 DWORD WINAPI
 CardReadFile(
@@ -889,43 +919,18 @@ CardReadFile(
 
 	//cardid
 	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
-		/*
-		const char buf[] = { 0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
-			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
-		*pcbData = (DWORD)16;
+		// Refer to: https://github.com/OpenSC/OpenSC/blob/master/src/minidriver/opensc-minidriver.inf.in
+		const char class_guid[] = {
+						0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
+						0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
+		*pcbData = (DWORD)sizeof(class_guid);
 		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + *pcbData);
 		if (!*ppbData) {
 			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
 			return SCARD_E_NO_MEMORY;
 		}
 		memset(*ppbData, 0, 1 + *pcbData);
-		memcpy(*ppbData, buf, *pcbData);
-		*/
-		DWORD			objID;
-		ykpiv_state		ykState;
-		unsigned char	buf[2048];
-		ykpiv_rc	ykrc = YKPIV_OK;
-		objID = YKPIV_OBJ_MSMDCARDID;
-		ykrc = selectAppletYubiKey(&ykState);
-		if (ykrc != YKPIV_OK) { logger->TraceInfo("CardReadFile: selectAppletYubiKey failed. ykrc=%d", ykrc); }
-		ykrc = getSerialNumber(&ykState, (char *)&buf[0]);
-		*pcbData = (DWORD)16;
-		buf[*pcbData] = 0;
-		const char _buf[] = {	0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
-								0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + *pcbData);
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		memset(*ppbData, 0, 1+*pcbData);
-		memcpy(*ppbData, _buf, *pcbData);
-		//logger->TraceInfo("CardReadFile: getSerialNumber - buf=%s", buf);
-		ykrc = YKPIV_OK;
-		if (shouldSelectApplet(&ykState)) {
-			ykrc = selectApplet(&ykState);
-			if (ykrc != YKPIV_OK) { logger->TraceInfo("CardReadFile: selectApplet failed. ykrc=%d", ykrc); }
-		}
+		memcpy(*ppbData, class_guid, *pcbData);
 	}
 	//cardcf
 	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
@@ -986,8 +991,8 @@ CardReadFile(
 	ykpiv_state		ykState;
 	ykpiv_rc		ykrc = YKPIV_OK;
 	DWORD			objID;
-	unsigned char	buf[2048];
-	unsigned long	buflen = 0;
+	unsigned char	buf[2049];
+	DWORD			buflen = sizeof(buf)-1;
 	DWORD			dwRet = SCARD_S_SUCCESS;
 
 	if (logger) {
@@ -1006,8 +1011,12 @@ CardReadFile(
 		return SCARD_E_INVALID_PARAMETER;
 	if (!ppbData)
 		return SCARD_E_INVALID_PARAMETER;
-	if (!pcbData)
-		return SCARD_E_INVALID_PARAMETER;
+	if (NULL == pcbData) {
+		if (logger) { logger->TraceInfo("pcbData is NULL, read the entire file"); }
+	}
+	if (0 == *pcbData) {
+		if (logger) { logger->TraceInfo("pcbData is 0, read the entire file"); }
+	}
 	if (dwFlags)
 		return SCARD_E_INVALID_PARAMETER;
 	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
@@ -1022,7 +1031,6 @@ CardReadFile(
 	}
 
 	memset(buf, 0, sizeof(buf));
-	buflen = sizeof(buf);
 
 	//cardcf - YKPIV_OBJ_MSMDCARDCF
 	if (0 == strcmp(pszFileName, szCACHE_FILE)) {
@@ -1038,17 +1046,12 @@ CardReadFile(
 	//cardid - YKPIV_OBJ_MSMDCARDID
 	else if (0 == strcmp(pszFileName, szCARD_IDENTIFIER_FILE)) {
 		objID = YKPIV_OBJ_MSMDCARDID;
-		ykrc = selectAppletYubiKey(&ykState);
-		if (ykrc != YKPIV_OK) { logger->TraceInfo("CardReadFile: selectAppletYubiKey failed. ykrc=%d", ykrc); }
-		ykrc = getSerialNumber(&ykState, (char *)&buf[0]);
-		buflen = 16;
-		buf[buflen] = 0;
-		logger->TraceInfo("CardReadFile: getSerialNumber - buf=%s", buf);
-		ykrc = YKPIV_OK;
-		if (shouldSelectApplet(&ykState)) {
-			ykrc = selectApplet(&ykState);
-			if (ykrc != YKPIV_OK) { logger->TraceInfo("CardReadFile: selectApplet failed. ykrc=%d", ykrc); }
-		}
+		// Refer to: https://github.com/OpenSC/OpenSC/blob/master/src/minidriver/opensc-minidriver.inf.in
+		const unsigned char class_guid[] = {
+			0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
+			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
+		buflen = sizeof(class_guid);
+		memcpy(buf, class_guid, buflen);
 	}
 	//cardapps - YKPIV_OBJ_MSMDCARDAPPS
 	else if (0 == strcmp(pszFileName, szCARD_APPS)) {
@@ -1181,6 +1184,18 @@ DWORD WINAPI CardWriteFile(
 		if (logger) { logger->TraceInfo("CardWriteFile failed - ykpiv_save_object"); }
 		return ykrc2mdrc(ykrc);
 	}
+#if 1 //verify write
+	unsigned char	buf[9999];
+	unsigned long	buflen = sizeof(buf) - 1;
+	memset(buf, 0, buflen);
+	buflen = cbData;
+	ykrc = ykpiv_fetch_object(&ykState, objID, buf, &buflen);
+	if (ykrc != YKPIV_OK) {
+		if (logger) { logger->TraceInfo("CardWriteFile failed because ykpiv_fetch_object failed"); }
+	} else {
+		if (logger) { logger->PrintBuffer(buf, buflen); }
+	}
+#endif
 
 	if (logger) { logger->TraceInfo("CardWriteFile passed"); }
 	return SCARD_S_SUCCESS;

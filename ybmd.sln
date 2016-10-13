@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ybmd", "ybmd\ybmd.vcxproj", "{1B1AD784-2742-4D8E-9BD4-A8C01DA31C27}"
+	ProjectSection(ProjectDependencies) = postProject
+		{903E7764-7AF4-4096-A57E-F8F669C5B80F} = {903E7764-7AF4-4096-A57E-F8F669C5B80F}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SCMiniDriverTest", "..\SCMiniDriverTest\SCMiniDriverTest\SCMiniDriverTest.vcxproj", "{903E7764-7AF4-4096-A57E-F8F669C5B80F}"
 EndProject
