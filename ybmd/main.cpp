@@ -3,6 +3,9 @@
 #include <mutex>
 #include <VersionHelpers.h>
 
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+
 #include "../cpplogger/cpplogger.h"
 #include "../inc/cpdk/cardmod.h"
 #include <ykpiv/ykpiv.h>
@@ -769,6 +772,126 @@ void logPrivateKeyBlob(LPBYTE pbBlob)
 		logger->PrintBuffer(pbCoeff, cbCoeff);
 	}
 }
+ykpiv_rc importPrivateKeyBlob(
+			ykpiv_state*	pState,
+			LPBYTE			pbBlob
+)
+{
+	ykpiv_rc	ykrc = YKPIV_OK;
+	LPBYTE		pbModulus, pbPrime1, pbPrime2, pbExp1, pbExp2, pbCoeff, pbPriExp;
+	DWORD		cbModulus, cbPrime1, cbPrime2, cbExp1, cbExp2, cbCoeff, cbPriExp;
+	RSAPUBKEY*	pRsa = (RSAPUBKEY *)(pbBlob + sizeof(BLOBHEADER));
+	LPBYTE		pbKeyData = pbBlob + sizeof(BLOBHEADER) + sizeof(RSAPUBKEY);
+
+	cbModulus = (pRsa->bitlen + 7) / 8;
+	cbPriExp = cbModulus;
+	cbPrime1 = cbPrime2 = cbExp1 = cbExp2 = cbCoeff = cbModulus / 2;
+	pbModulus = pbKeyData;
+	pbPrime1 = pbModulus + cbModulus;
+	pbPrime2 = pbPrime1 + cbPrime1;
+	pbExp1 = pbPrime2 + cbPrime2;
+	pbExp2 = pbExp1 + cbExp1;
+	pbCoeff = pbExp2 + cbExp2;
+	pbPriExp = pbCoeff + cbCoeff;
+
+	ReverseBuffer(pbModulus, cbModulus);
+	ReverseBuffer(pbPrime1, cbPrime1);
+	ReverseBuffer(pbPrime2, cbPrime2);
+	ReverseBuffer(pbExp1, cbExp1);
+	ReverseBuffer(pbExp2, cbExp2);
+	ReverseBuffer(pbCoeff, cbCoeff);
+	ReverseBuffer(pbPriExp, cbPriExp);
+
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("Private Key Details:\n");
+		logger->TraceInfo("=> RSA Bit Length = %d\n", pRsa->bitlen);
+		logger->TraceInfo("=> Public Exponent = 0x%.8X\n", pRsa->pubexp);
+		logger->TraceInfo("=> Modulus = ");
+		logger->PrintBuffer(pbModulus, cbModulus);
+		logger->TraceInfo("=> Private Exponent = ");
+		logger->PrintBuffer(pbPriExp, cbPriExp);
+		logger->TraceInfo("=> P:");
+		logger->PrintBuffer(pbPrime1, cbPrime1);
+		logger->TraceInfo("=> Q:");
+		logger->PrintBuffer(pbPrime2, cbPrime2);
+		logger->TraceInfo("=> DP:");
+		logger->PrintBuffer(pbExp1, cbExp1);
+		logger->TraceInfo("=> DQ:");
+		logger->PrintBuffer(pbExp2, cbExp2);
+		logger->TraceInfo("=> Coefficient:");
+		logger->PrintBuffer(pbCoeff, cbCoeff);
+	}
+
+	ykrc = _import_private_key(
+			pState,
+			YKPIV_KEY_RETIRED1,
+			YKPIV_ALGO_RSA2048,
+			pbPrime1, cbPrime1,
+			pbPrime2, cbPrime2,
+			pbExp1, cbExp1,
+			pbExp2, cbExp2,
+			pbCoeff, cbCoeff,
+			NULL, 0,
+			YKPIV_PINPOLICY_DEFAULT,
+			YKPIV_TOUCHPOLICY_DEFAULT
+			);
+	if (ykrc != YKPIV_OK) {
+		logger->TraceInfo("_import_private_key failed with error %d", ykrc);
+		//return ykrc;
+	}
+	unsigned char	msg[] = "aaaaaaaaaa";
+	size_t			msglen = 10;
+	unsigned char	sig[256];
+	size_t			siglen = sizeof(sig);
+	unsigned char	pt[256];
+	size_t			ptlen = sizeof(pt);
+
+	memset(pt, 0, sizeof(pt));
+	memset(sig, 0, sizeof(sig));
+
+	int osslrc = RSA_padding_add_PKCS1_type_1(pt, ptlen, msg, msglen);
+	if (osslrc != 1) {
+		logger->TraceInfo("RSA_padding_add_PKCS1_type_1 failed with error %d", osslrc);
+		return YKPIV_GENERIC_ERROR;
+	}
+	else {
+		logger->TraceInfo("RSA_padding_add_PKCS1_type_1 succeed - pt:");
+		logger->PrintBuffer(pt, ptlen);
+	}
+	ykrc = ykpiv_sign_data(
+			pState,
+			pt, ptlen,
+			sig, &siglen,
+			YKPIV_ALGO_RSA2048,
+			YKPIV_KEY_RETIRED1
+			);
+	if (ykrc != YKPIV_OK) {
+		logger->TraceInfo("ykpiv_sign_data failed with error %d", ykrc);
+		return ykrc;
+	} else {
+		logger->TraceInfo("ykpiv_sign_data succeed - sig:");
+		logger->PrintBuffer(sig, siglen);
+	}
+
+	memset(pt, 0, sizeof(pt));
+	ykrc = ykpiv_decipher_data(
+			pState,
+			sig, siglen,
+			pt, &ptlen,
+			YKPIV_ALGO_RSA2048,
+			YKPIV_KEY_RETIRED1
+			);
+	if (ykrc != YKPIV_OK) {
+		logger->TraceInfo("ykpiv_decipher_data failed with error %d", ykrc);
+		return ykrc;
+	} else {
+		logger->TraceInfo("ykpiv_decipher_data succeed - pt:");
+		logger->PrintBuffer(pt, ptlen);
+	}
+
+	return ykrc;
+}
 //CardCreateContainer
 DWORD WINAPI
 CardCreateContainer(
@@ -780,6 +903,9 @@ CardCreateContainer(
 	__in PBYTE pbKeyData
 )
 {
+	ykpiv_rc	ykrc = YKPIV_OK;
+	ykpiv_state	ykState;
+
 	if (logger) {
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardCreateContainer    #####");
@@ -805,13 +931,16 @@ CardCreateContainer(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+
 	switch (dwFlags) {
-	case CARD_CREATE_CONTAINER_KEY_IMPORT:
+		case CARD_CREATE_CONTAINER_KEY_IMPORT:
+			ykrc = importPrivateKeyBlob(&ykState, pbKeyData);
 		break;
-	case CARD_CREATE_CONTAINER_KEY_GEN:
+		case CARD_CREATE_CONTAINER_KEY_GEN:
 		break;
 	}
-	//YKPIV_KEY_RETIRED1
 
 	return SCARD_S_SUCCESS;
 } // of CardCreateContainer

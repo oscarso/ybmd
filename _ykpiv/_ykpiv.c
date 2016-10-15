@@ -4,6 +4,43 @@
 
 */
 #if 0
+int		ret = 0;
+RSA		*r = NULL;
+BIGNUM	*bne = NULL;
+BIO		*bp_public = NULL;
+BIO		*bp_private = NULL;
+int				bits = 2048;
+unsigned long	e = RSA_F4;
+unsigned char	hash[20];
+unsigned char	msg[] = "abcd";
+unsigned char	msglen = sizeof(msg);
+unsigned char	sig[256];
+unsigned int	siglen = 0;
+
+bne = BN_new();
+ret = BN_set_word(bne, e);
+if (ret != 1) {
+	return NULL;
+}
+
+r = RSA_new();
+ret = RSA_generate_key_ex(r, bits, bne, NULL);
+if (ret != 1) {
+	return NULL;
+}
+
+if (!SHA1(msg, msglen, hash)) return NULL;
+memset(sig, 0, sizeof(sig));
+ret = RSA_sign(NID_sha1, hash, sizeof(hash), sig, &siglen, r);
+if (ret != 1) {
+	return NULL;
+}
+
+ret = RSA_verify(NID_sha1, msg, msglen, sig, siglen, r);
+if (ret != 1) {
+	return NULL;
+}
+
 #define CHREF_ACT_CHANGE_PIN 0
 #define CHREF_ACT_UNBLOCK_PIN 1
 #define CHREF_ACT_CHANGE_PUK 2
