@@ -86,7 +86,6 @@ namespace CPPLOGGER
 
 	CPPLogger::~CPPLogger()
 	{
-		delete m_Instance;
 		if (m_pFileStream) {
 			fclose(m_pFileStream);
 			m_pFileStream = NULL;

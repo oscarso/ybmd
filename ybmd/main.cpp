@@ -3,14 +3,14 @@
 #include <mutex>
 #include <VersionHelpers.h>
 
-#include <openssl/rsa.h>
-#include <openssl/pem.h>
-
 #include "../cpplogger/cpplogger.h"
 #include "../inc/cpdk/cardmod.h"
 #include <ykpiv/ykpiv.h>
 #include <internal.h>
 
+
+// OpenSSL defines
+#define	RSA_PKCS1_PADDING_SIZE	11
 
 // Global Variables
 #define	SZ_MAX_PAGE			2048 //max size in bytes per flash page
@@ -82,8 +82,153 @@ DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 	}
 	return dwRet;
 }
-
 #if 1
+static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
+	unsigned char *data, unsigned long *recv_len, int *sw) {
+	long rc;
+	unsigned int send_len = (unsigned int)apdu->st.lc + 5;
+
+	if (logger) {
+		logger->TraceInfo("_send_data");
+		logger->TraceInfo("Data Sent:");
+		logger->PrintBuffer(apdu->raw, send_len);
+	}
+
+	rc = SCardTransmit(state->card, SCARD_PCI_T1, apdu->raw, send_len, NULL, data, recv_len);
+	if (rc != SCARD_S_SUCCESS) {
+		if (logger) { logger->TraceInfo("error: SCardTransmit failed, rc=%08lx\n", rc); }
+		return YKPIV_PCSC_ERROR;
+	}
+
+	if (logger) {
+		logger->TraceInfo("Data Received:");
+		logger->PrintBuffer(data, *recv_len);
+	}
+	if (*recv_len >= 2) {
+		*sw = (data[*recv_len - 2] << 8) | data[*recv_len - 1];
+	}
+	else {
+		*sw = 0;
+	}
+	return YKPIV_OK;
+}
+#endif
+#if 1
+ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
+	const unsigned char *in_data, long in_len,
+	unsigned char *out_data, unsigned long *out_len, int *sw) {
+	const unsigned char *in_ptr = in_data;
+	unsigned long max_out = *out_len;
+	ykpiv_rc res;
+	long rc;
+	*out_len = 0;
+
+	if (logger) {
+		logger->TraceInfo("_transfer_data");
+		logger->TraceInfo("_transfer_data: IN");
+		logger->PrintBuffer(in_data, in_len);
+	}
+
+	rc = SCardBeginTransaction(state->card);
+	if (rc != SCARD_S_SUCCESS) {
+		if (logger) { logger->TraceInfo("_transfer_data: SCardBeginTransaction rc=%x", rc); }
+		return YKPIV_PCSC_ERROR;
+	}
+
+	do {
+		size_t this_size = 0xff;
+		unsigned char data[261];
+		unsigned long recv_len = sizeof(data);
+		APDU apdu;
+
+		memset(apdu.raw, 0, sizeof(apdu.raw));
+		memcpy(apdu.raw, templ, 4);
+		if (in_ptr + 0xff < in_data + in_len) {
+			apdu.st.cla = 0x10;
+		}
+		else {
+			this_size = (size_t)((in_data + in_len) - in_ptr);
+		}
+		if (logger) { logger->TraceInfo("Going to send %lu bytes in this go.\n", (unsigned long)this_size); }
+		apdu.st.lc = (unsigned char)this_size;
+		memcpy(apdu.st.data, in_ptr, this_size);
+		res = _send_data(state, &apdu, data, &recv_len, sw);
+		logger->TraceInfo("1st _send_data: res=%d", res);
+		if (res != YKPIV_OK) {
+			return res;
+		}
+		else if (*sw != SW_SUCCESS && *sw >> 8 != 0x61) {
+			return YKPIV_OK;
+		}
+		if (*out_len + recv_len - 2 > max_out) {
+			if (logger) {
+				logger->TraceInfo("Output buffer too small, wanted to write %lu, max was %lu.\n", *out_len + recv_len - 2, max_out);
+			}
+			return YKPIV_SIZE_ERROR;
+		}
+		if (out_data) {
+			memcpy(out_data, data, recv_len - 2);
+			out_data += recv_len - 2;
+			*out_len += recv_len - 2;
+		}
+		in_ptr += this_size;
+	} while (in_ptr < in_data + in_len);
+	while (*sw >> 8 == 0x61) {
+		APDU apdu;
+		unsigned char data[261];
+		unsigned long recv_len = sizeof(data);
+
+		if (logger) {
+			logger->TraceInfo("The card indicates there is %d bytes more data for us.\n", *sw & 0xff);
+		}
+
+		memset(apdu.raw, 0, sizeof(apdu.raw));
+		apdu.st.ins = 0xc0;
+		res = _send_data(state, &apdu, data, &recv_len, sw);
+		logger->TraceInfo("2nd _send_data: res=%d", res);
+		if (res != YKPIV_OK) {
+			return res;
+		}
+		else if (*sw != SW_SUCCESS && *sw >> 8 != 0x61) {
+			return YKPIV_OK;
+		}
+		if (*out_len + recv_len - 2 > max_out) {
+			logger->TraceInfo("Output buffer to small, wanted to write %lu, max was %lu.", *out_len + recv_len - 2, max_out);
+		}
+		if (out_data) {
+			memcpy(out_data, data, recv_len - 2);
+			out_data += recv_len - 2;
+			*out_len += recv_len - 2;
+		}
+	}
+	rc = SCardEndTransaction(state->card, SCARD_LEAVE_CARD);
+	if (rc != SCARD_S_SUCCESS) {
+		if (logger) { logger->TraceInfo("_transfer_data: error: Failed to end pcsc transaction, rc=%08lx\n", rc); }
+		return YKPIV_PCSC_ERROR;
+	}
+	if (logger) {
+		logger->TraceInfo("_transfer_data: OUT");
+		logger->PrintBuffer(out_data, *out_len);
+		logger->TraceInfo("_transfer_data: OUT sw: %x", *sw);
+	}
+	return YKPIV_OK;
+}
+static int get_length(const unsigned char *buffer, size_t *len) {
+	if (buffer[0] < 0x81) {
+		*len = buffer[0];
+		return 1;
+	}
+	else if ((*buffer & 0x7f) == 1) {
+		*len = buffer[1];
+		return 2;
+	}
+	else if ((*buffer & 0x7f) == 2) {
+		size_t tmp = buffer[1];
+		*len = (tmp << 8) + buffer[2];
+		return 3;
+	}
+	return 0;
+}
 static int set_length(unsigned char *buffer, size_t length) {
 	if (length < 0x80) {
 		*buffer++ = length;
@@ -214,7 +359,7 @@ ykpiv_rc _import_private_key(
 		*in_ptr++ = touch_policy;
 	}
 
-	if (ykpiv_transfer_data(state, templ, key_data, in_ptr - key_data, data, &recv_len, &sw) != YKPIV_OK)
+	if (_transfer_data(state, templ, key_data, in_ptr - key_data, data, &recv_len, &sw) != YKPIV_OK)
 		return YKPIV_GENERIC_ERROR;
 
 	if (sw == SW_ERR_SECURITY_STATUS)
@@ -225,39 +370,121 @@ ykpiv_rc _import_private_key(
 
 	return YKPIV_OK;
 }
-#endif
+static ykpiv_rc _general_authenticate(ykpiv_state *state,
+	const unsigned char *sign_in, size_t in_len,
+	unsigned char *out, size_t *out_len,
+	unsigned char algorithm, unsigned char key, bool decipher) {
+	unsigned char indata[1024];
+	unsigned char *dataptr = indata;
+	unsigned char data[1024];
+	unsigned char templ[] = { 0, YKPIV_INS_AUTHENTICATE, algorithm, key };
+	unsigned long recv_len = sizeof(data);
+	size_t key_len = 0;
+	int sw;
+	size_t bytes;
+	size_t len = 0;
+	ykpiv_rc res;
 
-#if 1
-static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
-	unsigned char *data, unsigned long *recv_len, int *sw) {
-	long rc;
-	unsigned int send_len = (unsigned int)apdu->st.lc + 5;
-
-	if (logger) {
-		logger->TraceInfo("_send_data");
-		logger->TraceInfo("Data Sent:");
-		logger->PrintBuffer(apdu->raw, send_len);
+	switch (algorithm) {
+	case YKPIV_ALGO_RSA1024:
+		key_len = 128;
+	case YKPIV_ALGO_RSA2048:
+		if (key_len == 0) {
+			key_len = 256;
+		}
+		if (in_len != key_len) {
+			return YKPIV_SIZE_ERROR;
+		}
+		break;
+	case YKPIV_ALGO_ECCP256:
+		key_len = 32;
+	case YKPIV_ALGO_ECCP384:
+		if (key_len == 0) {
+			key_len = 48;
+		}
+		if (!decipher && in_len > key_len) {
+			return YKPIV_SIZE_ERROR;
+		}
+		else if (decipher && in_len != (key_len * 2) + 1) {
+			return YKPIV_SIZE_ERROR;
+		}
+		break;
+	default:
+		return YKPIV_ALGORITHM_ERROR;
 	}
 
-	rc = SCardTransmit(state->card, SCARD_PCI_T1, apdu->raw, send_len, NULL, data, recv_len);
-	if (rc != SCARD_S_SUCCESS) {
-		if (logger) { logger->TraceInfo("error: SCardTransmit failed, rc=%08lx\n", rc); }
-		return YKPIV_PCSC_ERROR;
+	if (in_len < 0x80) {
+		bytes = 1;
+	}
+	else if (in_len < 0xff) {
+		bytes = 2;
+	}
+	else {
+		bytes = 3;
 	}
 
-	if (logger) {
-		logger->TraceInfo("Data Received:");
-		logger->PrintBuffer(data, *recv_len);
+	*dataptr++ = 0x7c;
+	dataptr += set_length(dataptr, in_len + bytes + 3);
+	*dataptr++ = 0x82;
+	*dataptr++ = 0x00;
+	*dataptr++ = YKPIV_IS_EC(algorithm) && decipher ? 0x85 : 0x81;
+	dataptr += set_length(dataptr, in_len);
+	memcpy(dataptr, sign_in, (size_t)in_len);
+	dataptr += in_len;
+
+	if ((res = _transfer_data(state, templ, indata, dataptr - indata, data,
+		&recv_len, &sw)) != YKPIV_OK) {
+		if (state->verbose) {
+			fprintf(stderr, "Sign command failed to communicate.\n");
+		}
+		return res;
 	}
-	if (*recv_len >= 2) {
-		*sw = (data[*recv_len - 2] << 8) | data[*recv_len - 1];
-	} else {
-		*sw = 0;
+	else if (sw != SW_SUCCESS) {
+		if (state->verbose) {
+			fprintf(stderr, "Failed sign command with code %x.\n", sw);
+		}
+		if (sw == SW_ERR_SECURITY_STATUS)
+			return YKPIV_AUTHENTICATION_ERROR;
+		else
+			return YKPIV_GENERIC_ERROR;
 	}
+	/* skip the first 7c tag */
+	if (data[0] != 0x7c) {
+		if (state->verbose) {
+			fprintf(stderr, "Failed parsing signature reply.\n");
+		}
+		return YKPIV_PARSE_ERROR;
+	}
+	dataptr = data + 1;
+	dataptr += get_length(dataptr, &len);
+	/* skip the 82 tag */
+	if (*dataptr != 0x82) {
+		if (state->verbose) {
+			fprintf(stderr, "Failed parsing signature reply.\n");
+		}
+		return YKPIV_PARSE_ERROR;
+	}
+	dataptr++;
+	dataptr += get_length(dataptr, &len);
+	if (len > *out_len) {
+		if (state->verbose) {
+			fprintf(stderr, "Wrong size on output buffer.\n");
+		}
+		return YKPIV_SIZE_ERROR;
+	}
+	*out_len = len;
+	memcpy(out, dataptr, len);
 	return YKPIV_OK;
 }
-#endif
+ykpiv_rc _sign_data(ykpiv_state *state,
+	const unsigned char *raw_in, size_t in_len,
+	unsigned char *sign_out, size_t *out_len,
+	unsigned char algorithm, unsigned char key) {
 
+	return _general_authenticate(state, raw_in, in_len, sign_out, out_len,
+		algorithm, key, false);
+}
+#endif
 #if 0
 ykpiv_rc _verify(ykpiv_state *state, const char *pin, int *tries) {
 	APDU apdu;
@@ -772,6 +999,34 @@ void logPrivateKeyBlob(LPBYTE pbBlob)
 		logger->PrintBuffer(pbCoeff, cbCoeff);
 	}
 }
+int _RSA_padding_add_PKCS1_type_1(
+		unsigned char *to,
+		int tlen,
+		const unsigned char *from,
+		int flen
+)
+{
+	int j;
+	unsigned char *p;
+
+	if (flen > (tlen - RSA_PKCS1_PADDING_SIZE)) {
+		logger->TraceInfo("_RSA_padding_add_PKCS1_type_1: size error");
+		return (0);
+	}
+
+	p = (unsigned char *)to;
+
+	*(p++) = 0;
+	*(p++) = 1;	/* Private Key BT (Block Type) */
+
+	/* pad out with 0xff data */
+	j = tlen - 3 - flen;
+	memset(p, 0xff, j);
+	p += j;
+	*(p++) = '\0';
+	memcpy(p, from, (unsigned int)flen);
+	return (1);
+}
 ykpiv_rc importPrivateKeyBlob(
 			ykpiv_state*	pState,
 			LPBYTE			pbBlob
@@ -826,7 +1081,7 @@ ykpiv_rc importPrivateKeyBlob(
 	ykrc = _import_private_key(
 			pState,
 			YKPIV_KEY_RETIRED1,
-			YKPIV_ALGO_RSA2048,
+			(pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048,
 			pbPrime1, cbPrime1,
 			pbPrime2, cbPrime2,
 			pbExp1, cbExp1,
@@ -840,46 +1095,48 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->TraceInfo("_import_private_key failed with error %d", ykrc);
 		//return ykrc;
 	}
-	unsigned char	msg[] = "aaaaaaaaaa";
-	size_t			msglen = 10;
-	unsigned char	sig[256];
+	unsigned char	msg[] = "aaaaaaaaaaaaaaaaaaaa";
+	size_t			msglen = 20;
+	unsigned char	sig[1024];
 	size_t			siglen = sizeof(sig);
-	unsigned char	pt[256];
-	size_t			ptlen = sizeof(pt);
+	unsigned char	pt_padded[256];
+	size_t			pt_padded_len = 0;
 
-	memset(pt, 0, sizeof(pt));
+	memset(pt_padded, 0, sizeof(pt_padded));
 	memset(sig, 0, sizeof(sig));
 
-	int osslrc = RSA_padding_add_PKCS1_type_1(pt, ptlen, msg, msglen);
+	pt_padded_len = pRsa->bitlen/8;
+	int osslrc = _RSA_padding_add_PKCS1_type_1(pt_padded, pt_padded_len, msg, msglen);
 	if (osslrc != 1) {
-		logger->TraceInfo("RSA_padding_add_PKCS1_type_1 failed with error %d", osslrc);
+		logger->TraceInfo("_RSA_padding_add_PKCS1_type_1 failed with error %d", osslrc);
 		return YKPIV_GENERIC_ERROR;
+	} else {
+		//ReverseBuffer(pt_padded, sizeof(pt_padded));
+		logger->TraceInfo("_RSA_padding_add_PKCS1_type_1 succeed - pt_padded:");
+		logger->PrintBuffer(pt_padded, sizeof(pt_padded));
 	}
-	else {
-		logger->TraceInfo("RSA_padding_add_PKCS1_type_1 succeed - pt:");
-		logger->PrintBuffer(pt, ptlen);
-	}
-	ykrc = ykpiv_sign_data(
+	ykrc = _sign_data(
 			pState,
-			pt, ptlen,
+			pt_padded, pt_padded_len,
 			sig, &siglen,
-			YKPIV_ALGO_RSA2048,
+			(pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048,
 			YKPIV_KEY_RETIRED1
 			);
 	if (ykrc != YKPIV_OK) {
-		logger->TraceInfo("ykpiv_sign_data failed with error %d", ykrc);
+		logger->TraceInfo("_sign_data failed with error %d", ykrc);
 		return ykrc;
 	} else {
-		logger->TraceInfo("ykpiv_sign_data succeed - sig:");
+		logger->TraceInfo("_sign_data succeed - sig:");
 		logger->PrintBuffer(sig, siglen);
 	}
 
-	memset(pt, 0, sizeof(pt));
+	memset(pt_padded, 0, sizeof(pt_padded));
+	pt_padded_len = sizeof(pt_padded);
 	ykrc = ykpiv_decipher_data(
 			pState,
 			sig, siglen,
-			pt, &ptlen,
-			YKPIV_ALGO_RSA2048,
+			pt_padded, &pt_padded_len,
+			(pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048,
 			YKPIV_KEY_RETIRED1
 			);
 	if (ykrc != YKPIV_OK) {
@@ -887,7 +1144,7 @@ ykpiv_rc importPrivateKeyBlob(
 		return ykrc;
 	} else {
 		logger->TraceInfo("ykpiv_decipher_data succeed - pt:");
-		logger->PrintBuffer(pt, ptlen);
+		logger->PrintBuffer(pt_padded, pt_padded_len);
 	}
 
 	return ykrc;
