@@ -123,11 +123,7 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 	long rc;
 	*out_len = 0;
 
-	if (logger) {
-		logger->TraceInfo("_transfer_data");
-		logger->TraceInfo("_transfer_data: IN");
-		logger->PrintBuffer(in_data, in_len);
-	}
+	if (logger) { logger->TraceInfo("_transfer_data"); }
 
 	rc = SCardBeginTransaction(state->card);
 	if (rc != SCARD_S_SUCCESS) {
@@ -153,7 +149,7 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 		apdu.st.lc = (unsigned char)this_size;
 		memcpy(apdu.st.data, in_ptr, this_size);
 		res = _send_data(state, &apdu, data, &recv_len, sw);
-		logger->TraceInfo("1st _send_data: res=%d", res);
+		if (logger) { logger->TraceInfo("1st _send_data: res=%d , recv_len=%d", res, recv_len); }
 		if (res != YKPIV_OK) {
 			return res;
 		}
@@ -161,9 +157,7 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 			return YKPIV_OK;
 		}
 		if (*out_len + recv_len - 2 > max_out) {
-			if (logger) {
-				logger->TraceInfo("Output buffer too small, wanted to write %lu, max was %lu.\n", *out_len + recv_len - 2, max_out);
-			}
+			if (logger) { logger->TraceInfo("Output buffer too small, wanted to write %lu, max was %lu.\n", *out_len + recv_len - 2, max_out); }
 			return YKPIV_SIZE_ERROR;
 		}
 		if (out_data) {
@@ -178,14 +172,12 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 		unsigned char data[261];
 		unsigned long recv_len = sizeof(data);
 
-		if (logger) {
-			logger->TraceInfo("The card indicates there is %d bytes more data for us.\n", *sw & 0xff);
-		}
+		if (logger) { logger->TraceInfo("The card indicates there is %d bytes more data for us.\n", *sw & 0xff); }
 
 		memset(apdu.raw, 0, sizeof(apdu.raw));
 		apdu.st.ins = 0xc0;
 		res = _send_data(state, &apdu, data, &recv_len, sw);
-		logger->TraceInfo("2nd _send_data: res=%d", res);
+		if (logger) { logger->TraceInfo("2nd _send_data: res=%d , recv_len=%d", res, recv_len); }
 		if (res != YKPIV_OK) {
 			return res;
 		}
@@ -205,11 +197,6 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 	if (rc != SCARD_S_SUCCESS) {
 		if (logger) { logger->TraceInfo("_transfer_data: error: Failed to end pcsc transaction, rc=%08lx\n", rc); }
 		return YKPIV_PCSC_ERROR;
-	}
-	if (logger) {
-		logger->TraceInfo("_transfer_data: OUT");
-		logger->PrintBuffer(out_data, *out_len);
-		logger->TraceInfo("_transfer_data: OUT sw: %x", *sw);
 	}
 	return YKPIV_OK;
 }
@@ -272,6 +259,8 @@ ykpiv_rc _import_private_key(
 	unsigned char n_params;
 	int i;
 	int param_tag;
+
+	if (logger) { logger->TraceInfo("_import_private_key"); }
 
 	if (state == NULL)
 		return YKPIV_GENERIC_ERROR;
@@ -481,8 +470,130 @@ ykpiv_rc _sign_data(ykpiv_state *state,
 	unsigned char *sign_out, size_t *out_len,
 	unsigned char algorithm, unsigned char key) {
 
+	if (logger) { logger->TraceInfo("_sign_data"); }
 	return _general_authenticate(state, raw_in, in_len, sign_out, out_len,
 		algorithm, key, false);
+}
+ykpiv_rc _decipher_data(ykpiv_state *state, const unsigned char *in,
+	size_t in_len, unsigned char *out, size_t *out_len,
+	unsigned char algorithm, unsigned char key) {
+
+	if (logger) { logger->TraceInfo("_decipher_data"); }
+	return _general_authenticate(state, in, in_len, out, out_len,
+		algorithm, key, true);
+}
+static ykpiv_rc _COMMON_token_generate_key(
+				ykpiv_state*		state,
+				const unsigned char key,
+				const unsigned char algorithm,
+				const size_t		key_len,
+				const unsigned char pin_policy,
+				const unsigned char touch_policy
+)
+{
+	// TODO: make a function in ykpiv for this
+	unsigned char in_data[11];
+	unsigned char *in_ptr = in_data;
+	unsigned char data[1024];
+	unsigned char templ[] = { 0, YKPIV_INS_GENERATE_ASYMMETRIC, 0, 0 };
+	unsigned char *certptr;
+	unsigned long recv_len = sizeof(data);
+	int len_bytes;
+	int sw;
+
+	ykpiv_rc	ykrv = YKPIV_OK;
+
+	if (logger) { logger->TraceInfo("_COMMON_token_generate_key"); }
+
+	if (pin_policy != YKPIV_PINPOLICY_DEFAULT &&
+		pin_policy != YKPIV_PINPOLICY_NEVER &&
+		pin_policy != YKPIV_PINPOLICY_ONCE &&
+		pin_policy != YKPIV_PINPOLICY_ALWAYS)
+		return YKPIV_GENERIC_ERROR;
+
+	if (touch_policy != YKPIV_TOUCHPOLICY_DEFAULT &&
+		touch_policy != YKPIV_TOUCHPOLICY_NEVER &&
+		touch_policy != YKPIV_TOUCHPOLICY_ALWAYS &&
+		touch_policy != YKPIV_TOUCHPOLICY_CACHED)
+		return YKPIV_GENERIC_ERROR;
+
+	templ[3] = key;
+
+	*in_ptr++ = 0xac;
+	*in_ptr++ = 3;
+	*in_ptr++ = YKPIV_ALGO_TAG;
+	*in_ptr++ = 1;
+
+	switch (key_len) {
+	case 2048:
+		if (YKPIV_ALGO_RSA2048 == algorithm)
+			*in_ptr++ = YKPIV_ALGO_RSA2048;
+		else
+			return YKPIV_GENERIC_ERROR;
+
+		break;
+
+	case 1024:
+		if (YKPIV_ALGO_RSA1024 == algorithm)
+			*in_ptr++ = YKPIV_ALGO_RSA1024;
+		else
+			return YKPIV_GENERIC_ERROR;
+
+		break;
+
+	default:
+		return YKPIV_GENERIC_ERROR;
+	}
+
+	// PIN policy and touch
+	if (YKPIV_PINPOLICY_DEFAULT != pin_policy) {
+		in_data[1] += 3;
+		*in_ptr++ = YKPIV_PINPOLICY_TAG;
+		*in_ptr++ = 0x01;
+		*in_ptr++ = pin_policy;
+	}
+
+	if (YKPIV_TOUCHPOLICY_DEFAULT != touch_policy) {
+		in_data[1] += 3;
+		*in_ptr++ = YKPIV_TOUCHPOLICY_TAG;
+		*in_ptr++ = 0x01;
+		*in_ptr++ = touch_policy;
+	}
+
+	if (_transfer_data(state, templ, in_data, in_ptr - in_data, data, &recv_len, &sw) != YKPIV_OK ||
+		sw != 0x9000)
+		return YKPIV_GENERIC_ERROR;
+
+/*
+	// Create a new empty certificate for the key
+	recv_len = sizeof(data);
+	if ((rv = do_create_empty_cert(data, recv_len, rsa, data, &recv_len)) != CKR_OK)
+		return rv;
+
+	if (recv_len < 0x80)
+		len_bytes = 1;
+	else if (recv_len < 0xff)
+		len_bytes = 2;
+	else
+		len_bytes = 3;
+
+	certptr = data;
+	memmove(data + len_bytes + 1, data, recv_len);
+
+	*certptr++ = 0x70;
+	certptr += set_length(certptr, recv_len);
+	certptr += recv_len;
+	*certptr++ = 0x71;
+	*certptr++ = 1;
+	*certptr++ = 0;
+	*certptr++ = 0xfe;
+	*certptr++ = 0;
+
+	// Store the certificate into the token
+	if (ykpiv_save_object(state, key_to_object_id(key), data, (size_t)(certptr - data)) != YKPIV_OK)
+		return CKR_DEVICE_ERROR;
+*/
+	return YKPIV_OK;
 }
 #endif
 #if 0
@@ -1061,9 +1172,14 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("Private Key Details:\n");
 		logger->TraceInfo("=> RSA Bit Length = %d\n", pRsa->bitlen);
+		//set e=1
+		pRsa->pubexp = 0x1;
 		logger->TraceInfo("=> Public Exponent = 0x%.8X\n", pRsa->pubexp);
 		logger->TraceInfo("=> Modulus = ");
 		logger->PrintBuffer(pbModulus, cbModulus);
+		//set d=1
+		memset(pbPriExp, 0, cbPriExp);
+		pbPriExp[0] = 0x1;
 		logger->TraceInfo("=> Private Exponent = ");
 		logger->PrintBuffer(pbPriExp, cbPriExp);
 		logger->TraceInfo("=> P:");
@@ -1078,10 +1194,12 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->PrintBuffer(pbCoeff, cbCoeff);
 	}
 
+	unsigned char	algo = (pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048;
+#if 0
 	ykrc = _import_private_key(
 			pState,
 			YKPIV_KEY_RETIRED1,
-			(pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048,
+			algo,
 			pbPrime1, cbPrime1,
 			pbPrime2, cbPrime2,
 			pbExp1, cbExp1,
@@ -1095,12 +1213,27 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->TraceInfo("_import_private_key failed with error %d", ykrc);
 		//return ykrc;
 	}
+#else
+	ykrc = _COMMON_token_generate_key(
+			pState,
+			YKPIV_KEY_RETIRED1,
+			algo,
+			pRsa->bitlen,
+			YKPIV_PINPOLICY_DEFAULT,
+			YKPIV_TOUCHPOLICY_DEFAULT
+			);
+	if (ykrc != YKPIV_OK) {
+		logger->TraceInfo("_COMMON_token_generate_key failed with error %d", ykrc);
+		//return ykrc;
+	}
+#endif
 	unsigned char	msg[] = "aaaaaaaaaaaaaaaaaaaa";
 	size_t			msglen = 20;
 	unsigned char	sig[1024];
 	size_t			siglen = sizeof(sig);
 	unsigned char	pt_padded[256];
 	size_t			pt_padded_len = 0;
+	
 
 	memset(pt_padded, 0, sizeof(pt_padded));
 	memset(sig, 0, sizeof(sig));
@@ -1111,7 +1244,10 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->TraceInfo("_RSA_padding_add_PKCS1_type_1 failed with error %d", osslrc);
 		return YKPIV_GENERIC_ERROR;
 	} else {
-		//ReverseBuffer(pt_padded, sizeof(pt_padded));
+		ReverseBuffer(pt_padded, sizeof(pt_padded));
+		if (YKPIV_ALGO_RSA1024 == algo) {
+			memmove(&pt_padded[0], &pt_padded[sizeof(pt_padded) / 2], sizeof(pt_padded) / 2);
+		}
 		logger->TraceInfo("_RSA_padding_add_PKCS1_type_1 succeed - pt_padded:");
 		logger->PrintBuffer(pt_padded, sizeof(pt_padded));
 	}
@@ -1119,7 +1255,7 @@ ykpiv_rc importPrivateKeyBlob(
 			pState,
 			pt_padded, pt_padded_len,
 			sig, &siglen,
-			(pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048,
+			algo,
 			YKPIV_KEY_RETIRED1
 			);
 	if (ykrc != YKPIV_OK) {
@@ -1132,18 +1268,18 @@ ykpiv_rc importPrivateKeyBlob(
 
 	memset(pt_padded, 0, sizeof(pt_padded));
 	pt_padded_len = sizeof(pt_padded);
-	ykrc = ykpiv_decipher_data(
+	ykrc = _decipher_data(
 			pState,
 			sig, siglen,
 			pt_padded, &pt_padded_len,
-			(pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048,
+			algo,
 			YKPIV_KEY_RETIRED1
 			);
 	if (ykrc != YKPIV_OK) {
-		logger->TraceInfo("ykpiv_decipher_data failed with error %d", ykrc);
+		logger->TraceInfo("_decipher_data failed with error %d", ykrc);
 		return ykrc;
 	} else {
-		logger->TraceInfo("ykpiv_decipher_data succeed - pt:");
+		logger->TraceInfo("_decipher_data succeed - pt:");
 		logger->PrintBuffer(pt_padded, pt_padded_len);
 	}
 
