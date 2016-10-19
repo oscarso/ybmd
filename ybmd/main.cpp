@@ -3,6 +3,10 @@
 #include <mutex>
 #include <VersionHelpers.h>
 
+#include <openssl/err.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+
 #include "../cpplogger/cpplogger.h"
 #include "../inc/cpdk/cardmod.h"
 #include <ykpiv/ykpiv.h>
@@ -83,6 +87,125 @@ DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
 	return dwRet;
 }
 #if 1
+void ReverseBuffer(LPBYTE pbData, DWORD cbData)
+{
+	DWORD i;
+	for (i = 0; i<(cbData / 2); i++)
+	{
+		BYTE t = pbData[i];
+		pbData[i] = pbData[cbData - 1 - i];
+		pbData[cbData - 1 - i] = t;
+	}
+}
+BOOL verifySignature(
+	LPBYTE	n,
+	DWORD	nlen,
+	LPBYTE	sig
+)
+{
+	int				ret = 0;
+	unsigned char	pt[256];
+	unsigned char	_sig[256];
+	RSA				*r = RSA_new();
+	BIGNUM			*bne = BN_new();
+	BIGNUM			*bnn = BN_new();
+
+	if (logger) { logger->TraceInfo("verifySignature"); }
+	ret = BN_set_word(bne, RSA_F4);
+	if (ret != 1) {
+		return FALSE;
+	}
+
+	/*
+	ret = RSA_generate_key_ex(r, nlen*8, bne, NULL);
+	if (ret != 1) {
+		return FALSE;
+	}
+	memset(_sig, 0, sizeof(_sig));
+	ret = RSA_private_encrypt(20, (const unsigned char *)"aaaaaaaaaaaaaaaaaaaa", _sig, r, RSA_PKCS1_PADDING);
+	if (logger) { logger->TraceInfo("_sig:"); }
+	if (logger) { logger->PrintBuffer(_sig, nlen); }
+	if (ret == -1) {
+		if (logger) { logger->TraceInfo("verifySignature: RSA_private_encrypt - err=%s", ERR_error_string(ERR_get_error(), NULL));}
+		return FALSE;
+	}
+	memset(pt, 0, sizeof(pt));
+	ret = RSA_public_decrypt(nlen, _sig, pt, r, RSA_PKCS1_PADDING);
+	if (logger) { logger->TraceInfo("pt:"); }
+	if (logger) { logger->PrintBuffer(pt, nlen); }
+	if (ret == -1) {
+		if (logger) { logger->TraceInfo("verifySignature: RSA_public_decrypt - err=%s", ERR_error_string(ERR_get_error(), NULL));}
+		return FALSE;
+	}
+	*/
+
+	if (logger) { logger->TraceInfo("verifySignature: r->n = bnn");}
+	if (logger) { logger->TraceInfo("n (with bnn):"); }
+	if (logger) { logger->PrintBuffer(n, nlen); }
+	//ReverseBuffer(n, nlen);
+	//if (logger) { logger->TraceInfo("n (reversed):"); }
+	//if (logger) { logger->PrintBuffer(n, nlen); }
+	bnn = BN_bin2bn(n, nlen, bnn);
+	if (bnn == NULL) {
+		return FALSE;
+	}
+	r->e = bne;
+	r->n = bnn;
+	r->d = NULL;
+	r->dmp1 = NULL;
+	r->dmq1 = NULL;
+	r->p = NULL;
+	r->q = NULL;
+	memset(pt, 0, sizeof(pt));
+	ret = RSA_public_decrypt(nlen, sig, pt, r, RSA_NO_PADDING);
+	if (logger) { logger->TraceInfo("pt (with bnn):"); }
+	if (logger) { logger->PrintBuffer(pt, nlen); }
+	if (ret == -1) {
+		if (logger) { logger->TraceInfo("verifySignature: RSA_public_decrypt - err=%s", ERR_error_string(ERR_get_error(), NULL));}
+		return FALSE;
+	}
+
+	return TRUE;
+}
+RSA* openssl_test(void) {
+	int		ret = 0; 
+	RSA		*r = NULL;
+	BIGNUM	*bne = NULL;
+	BIO		*bp_public = NULL;
+	BIO		*bp_private = NULL;
+	int				bits = 2048;
+	unsigned long	e = RSA_F4;
+	unsigned char	hash[20];
+	unsigned char	msg[] = "abcd";
+	unsigned char	msglen = strlen((const char *)msg);
+	unsigned char	sig[256];
+	unsigned int	siglen = 0;
+
+	bne = BN_new();
+	ret = BN_set_word(bne, e);
+	if (ret != 1) {
+		return NULL;
+	}
+
+	r = RSA_new();
+	ret = RSA_generate_key_ex(r, bits, bne, NULL);
+	if (ret != 1) {
+		return NULL;
+	}
+
+	if (!SHA1(msg, msglen, hash)) return NULL;
+	memset(sig, 0, sizeof(sig));
+	ret = RSA_sign(NID_sha1, hash, sizeof(hash), sig, &siglen, r);
+	if (ret != 1) {
+		return NULL;
+	}
+
+	ret = RSA_verify(NID_sha1, hash, sizeof(hash), sig, siglen, r);
+	if (ret != 1) {
+		return NULL;
+	}
+	return r;
+}
 static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 	unsigned char *data, unsigned long *recv_len, int *sw) {
 	long rc;
@@ -1052,16 +1175,6 @@ BOOL isValidKeySize(DWORD dwKeySize) {
 	}
 }
 
-void ReverseBuffer(LPBYTE pbData, DWORD cbData)
-{
-	DWORD i;
-	for (i = 0; i<(cbData / 2); i++)
-	{
-		BYTE t = pbData[i];
-		pbData[i] = pbData[cbData - 1 - i];
-		pbData[cbData - 1 - i] = t;
-	}
-}
 void logPrivateKeyBlob(LPBYTE pbBlob)
 {
 	//Reference: https://www.idrix.fr/Root/Samples/pfx_parse.cpp
@@ -1080,14 +1193,6 @@ void logPrivateKeyBlob(LPBYTE pbBlob)
 	pbExp2 = pbExp1 + cbExp1;
 	pbCoeff = pbExp2 + cbExp2;
 	pbPriExp = pbCoeff + cbCoeff;
-
-	ReverseBuffer(pbModulus, cbModulus);
-	ReverseBuffer(pbPrime1, cbPrime1);
-	ReverseBuffer(pbPrime2, cbPrime2);
-	ReverseBuffer(pbExp1, cbExp1);
-	ReverseBuffer(pbExp2, cbExp2);
-	ReverseBuffer(pbCoeff, cbCoeff);
-	ReverseBuffer(pbPriExp, cbPriExp);
 
 	if (logger) {
 		logger->TraceInfo("\n");
@@ -1168,34 +1273,10 @@ ykpiv_rc importPrivateKeyBlob(
 	ReverseBuffer(pbCoeff, cbCoeff);
 	ReverseBuffer(pbPriExp, cbPriExp);
 
-	if (logger) {
-		logger->TraceInfo("\n");
-		logger->TraceInfo("Private Key Details:\n");
-		logger->TraceInfo("=> RSA Bit Length = %d\n", pRsa->bitlen);
-		//set e=1
-		pRsa->pubexp = 0x1;
-		logger->TraceInfo("=> Public Exponent = 0x%.8X\n", pRsa->pubexp);
-		logger->TraceInfo("=> Modulus = ");
-		logger->PrintBuffer(pbModulus, cbModulus);
-		//set d=1
-		memset(pbPriExp, 0, cbPriExp);
-		pbPriExp[0] = 0x1;
-		logger->TraceInfo("=> Private Exponent = ");
-		logger->PrintBuffer(pbPriExp, cbPriExp);
-		logger->TraceInfo("=> P:");
-		logger->PrintBuffer(pbPrime1, cbPrime1);
-		logger->TraceInfo("=> Q:");
-		logger->PrintBuffer(pbPrime2, cbPrime2);
-		logger->TraceInfo("=> DP:");
-		logger->PrintBuffer(pbExp1, cbExp1);
-		logger->TraceInfo("=> DQ:");
-		logger->PrintBuffer(pbExp2, cbExp2);
-		logger->TraceInfo("=> Coefficient:");
-		logger->PrintBuffer(pbCoeff, cbCoeff);
-	}
+	if (logger) { logPrivateKeyBlob(pbBlob); }
 
 	unsigned char	algo = (pRsa->bitlen == 1024) ? YKPIV_ALGO_RSA1024 : YKPIV_ALGO_RSA2048;
-#if 0
+#if 1
 	ykrc = _import_private_key(
 			pState,
 			YKPIV_KEY_RETIRED1,
@@ -1266,21 +1347,14 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->PrintBuffer(sig, siglen);
 	}
 
-	memset(pt_padded, 0, sizeof(pt_padded));
-	pt_padded_len = sizeof(pt_padded);
-	ykrc = _decipher_data(
-			pState,
-			sig, siglen,
-			pt_padded, &pt_padded_len,
-			algo,
-			YKPIV_KEY_RETIRED1
-			);
-	if (ykrc != YKPIV_OK) {
-		logger->TraceInfo("_decipher_data failed with error %d", ykrc);
-		return ykrc;
+	// pbModulus - for IMPORTED key pairs
+	BOOL bVerified = verifySignature(pbModulus, cbModulus, sig);
+	if (bVerified) {
+		logger->TraceInfo("verifySignature verified");
+		ykrc = YKPIV_OK;
 	} else {
-		logger->TraceInfo("_decipher_data succeed - pt:");
-		logger->PrintBuffer(pt_padded, pt_padded_len);
+		logger->TraceInfo("verifySignature NOT verified");
+		ykrc = YKPIV_GENERIC_ERROR;
 	}
 
 	return ykrc;
