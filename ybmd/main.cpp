@@ -1408,8 +1408,7 @@ CardCreateContainer(
 		case CARD_CREATE_CONTAINER_KEY_GEN:
 		break;
 	}
-
-	return SCARD_S_SUCCESS;
+	return ykrc2mdrc(ykrc);
 } // of CardCreateContainer
 
 
