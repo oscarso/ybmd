@@ -97,6 +97,26 @@ void ReverseBuffer(LPBYTE pbData, DWORD cbData)
 		pbData[cbData - 1 - i] = t;
 	}
 }
+const char* cardFileAccessCond2String(const CARD_FILE_ACCESS_CONDITION cond) {
+	switch (cond) {
+	case 0: return "InvalidAc";
+	case 1: return "EveryoneReadUserWriteAc";
+	case 2: return "UserWriteExecuteAc";
+	case 3: return "EveryoneReadAdminWriteAc";
+	case 4: return "UnknownAc";
+	case 5: return "UserReadWriteAc";
+	case 6: return "AdminReadWriteAc";
+	default: return "UNDEFINED";
+	}
+}
+const char* cardDirAccessCond2String(const CARD_DIRECTORY_ACCESS_CONDITION cond) {
+	switch (cond) {
+	case 0: return "InvalidDirAc";
+	case 1: return "UserCreateDeleteDirAc";
+	case 2: return "AdminCreateDeleteDirAc";
+	default: return "UNDEFINED";
+	}
+}
 #if 0
 BOOL verifySignature(
 	LPBYTE	n,
@@ -1036,6 +1056,7 @@ CardAcquireContext(
 		}
 	}
 
+	logger->TraceInfo("CardAcquireContext returns SCARD_S_SUCCESS");
 	return SCARD_S_SUCCESS;
 }
 
@@ -1055,7 +1076,8 @@ CardGetChallengeEx(
 		logger->TraceInfo("##################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardGetChallengeEx returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1078,7 +1100,8 @@ CardAuthenticateEx(
 		logger->TraceInfo("######################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardAuthenticateEx returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1103,7 +1126,8 @@ CardChangeAuthenticatorEx(
 		logger->TraceInfo("#########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardChangeAuthenticatorEx returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1121,7 +1145,8 @@ CardDeauthenticateEx(
 		logger->TraceInfo("########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardDeauthenticateEx returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1143,7 +1168,8 @@ CardGetContainerProperty(
 		logger->TraceInfo("########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardGetContainerProperty returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1164,7 +1190,8 @@ CardSetContainerProperty(
 		logger->TraceInfo("########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardSetContainerProperty returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1258,7 +1285,8 @@ CardSetProperty(
 		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardSetProperty returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1275,7 +1303,8 @@ CardDestroyKey(
 		logger->TraceInfo("###################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardDestroyKey returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1297,7 +1326,8 @@ CardGetAlgorithmProperty(
 		logger->TraceInfo("########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardGetAlgorithmProperty returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1319,7 +1349,8 @@ CardGetKeyProperty(
 		logger->TraceInfo("########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardGetKeyProperty returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1340,7 +1371,8 @@ CardGetSharedKeyHandle(
 		logger->TraceInfo("########################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardGetSharedKeyHandle returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1361,7 +1393,8 @@ CardSetKeyProperty(
 		logger->TraceInfo("####################################");
 	}
 
-	return SCARD_S_SUCCESS;
+	logger->TraceInfo("CardSetKeyProperty returns SCARD_E_UNSUPPORTED_FEATURE");
+	return SCARD_E_UNSUPPORTED_FEATURE;
 }
 
 
@@ -1430,7 +1463,6 @@ CardQueryCapabilities(
 	__in      PCARD_CAPABILITIES  pCardCapabilities
 )
 {
-	DWORD	dwRet = SCARD_S_SUCCESS;
 	if (logger) {
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardQueryCapabilities    #####");
@@ -1442,7 +1474,12 @@ CardQueryCapabilities(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
-	return dwRet;
+	pCardCapabilities->dwVersion = CONTAINER_INFO_CURRENT_VERSION;
+	pCardCapabilities->fCertificateCompression = FALSE;
+	pCardCapabilities->fKeyGen = TRUE;
+
+	if (logger) { logger->TraceInfo("CardQueryCapabilities returns SCARD_S_SUCCESS"); }
+	return SCARD_S_SUCCESS;
 } // of CardQueryCapabilities
 
 
@@ -1465,6 +1502,7 @@ CardDeleteContainer(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
+	logger->TraceInfo("CardDeleteContainer returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteContainer
 
@@ -1757,6 +1795,8 @@ CardGetContainerInfo(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardGetContainerInfo    #####");
 		logger->TraceInfo("######################################");
+		logger->TraceInfo("IN bContainerIndex: %d", bContainerIndex);
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 	}
 	if (!pCardData) return SCARD_E_INVALID_PARAMETER;
 	if (!pContainerInfo) return SCARD_E_INVALID_PARAMETER;
@@ -1898,6 +1938,7 @@ CardAuthenticateChallenge(
 		return SCARD_E_INVALID_PARAMETER;
 	}
 
+	logger->TraceInfo("CardAuthenticateChallenge returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardAuthenticateChallenge
 
@@ -1996,7 +2037,11 @@ DWORD WINAPI CardCreateDirectory(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardCreateDirectory    #####");
 		logger->TraceInfo("#####################################");
+		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
+		logger->TraceInfo("IN AccessCondition: %s", cardDirAccessCond2String(AccessCondition));
 	}
+
+	logger->TraceInfo("CardCreateDirectory returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateDirectory
 
@@ -2012,7 +2057,10 @@ CardDeleteDirectory(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardDeleteDirectory    #####");
 		logger->TraceInfo("#####################################");
+		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
 	}
+
+	logger->TraceInfo("CardDeleteDirectory returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteDirectory
 
@@ -2031,7 +2079,13 @@ CardCreateFile(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardCreateFile    #####");
 		logger->TraceInfo("################################");
+		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
+		logger->TraceInfo("IN pszFileName: %s", pszFileName);
+		logger->TraceInfo("IN cbInitialCreationSize: %d", cbInitialCreationSize);
+		logger->TraceInfo("IN AccessCondition: %s", cardFileAccessCond2String(AccessCondition));
 	}
+
+	logger->TraceInfo("CardCreateFile returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateFile
 
@@ -2100,7 +2154,7 @@ CardReadFile(
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 6;
 			memset(buf, 0, buflen);
-			ykrc = YKPIV_OK;
+			dwRet = SCARD_E_FILE_NOT_FOUND;
 		}
 	}
 	//cardid - YKPIV_OBJ_MSMDCARDID
@@ -2109,6 +2163,7 @@ CardReadFile(
 		DWORD	dwDataLen = 0;
 		buflen = 16;
 		dwRet = CardGetProperty(pCardData, CP_CARD_GUID, (PBYTE)&buf[SZ_MAX_LEN], buflen, &dwDataLen, 0);
+		if (SCARD_S_SUCCESS != dwRet) goto EXIT;
 	}
 	//cardapps - YKPIV_OBJ_MSMDCARDAPPS
 	else if (0 == strcmp(pszFileName, szCARD_APPS)) {
@@ -2120,7 +2175,7 @@ CardReadFile(
 			buflen = 8;
 			memcpy(buf, "mscp", 4);
 			buf[buflen] = 0;
-			ykrc = YKPIV_OK;
+			dwRet = SCARD_E_FILE_NOT_FOUND;
 		}
 	}
 	//cmapfile - YKPIV_OBJ_MSMDCMAPFILE
@@ -2131,7 +2186,7 @@ CardReadFile(
 		if (ykrc != YKPIV_OK || 0 == buflen) {
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 0;
-			ykrc = YKPIV_OK;
+			dwRet = SCARD_E_FILE_NOT_FOUND;
 		}
 	}
 	//msroots - YKPIV_OBJ_MSMDMSROOTS
@@ -2142,7 +2197,7 @@ CardReadFile(
 		if (ykrc != YKPIV_OK || 0 == buflen) {
 			logger->TraceInfo("CardReadFile: ykpiv_fetch_object failed. ykrc=%d  buflen=%d", ykrc, buflen);
 			buflen = 0;
-			ykrc = YKPIV_OK;
+			dwRet = SCARD_E_FILE_NOT_FOUND;
 		}
 	}
 	else {
@@ -2158,9 +2213,11 @@ CardReadFile(
 	}
 	memset(*ppbData, 0, *pcbData);
 	memcpy(*ppbData, &buf[SZ_MAX_LEN], *pcbData);
- 
+
+EXIT:
 	if (logger) {
-		logger->TraceInfo("*ppbData:");
+		logger->TraceInfo("OUT: *pcbData = %d", *pcbData);
+		logger->TraceInfo("OUT: *ppbData");
 		logger->PrintBuffer(*ppbData, *pcbData);
 		logger->TraceInfo("CardReadFile returns %x", dwRet);
 	}
@@ -2246,7 +2303,7 @@ DWORD WINAPI CardWriteFile(
 		if (logger) { logger->TraceInfo("CardWriteFile failed - ykpiv_save_object - Bytes to be written: %d", cbData + SZ_MAX_LEN); }
 		return ykrc2mdrc(ykrc);
 	}
-#if 1 //verify write
+#if 0 //verify write
 	unsigned char	buf[SZ_MAX_PAGE + SZ_MAX_LEN + 1];
 	DWORD			buflen = sizeof(buf)-1;
 	memset(buf, 0, sizeof(buf));
@@ -2259,7 +2316,7 @@ DWORD WINAPI CardWriteFile(
 	}
 #endif
 
-	if (logger) { logger->TraceInfo("CardWriteFile passed"); }
+	if (logger) { logger->TraceInfo("CardWriteFile returns SCARD_S_SUCCESS"); }
 	return SCARD_S_SUCCESS;
 }
 
@@ -2276,7 +2333,11 @@ DWORD WINAPI CardDeleteFile(
 		logger->TraceInfo("\n");
 		logger->TraceInfo("#####    CardDeleteFile    #####");
 		logger->TraceInfo("################################");
+		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
+		logger->TraceInfo("IN pszFileName: %s", pszFileName);
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
 	}
+	logger->TraceInfo("CardDeleteFile returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardDeleteFile
 
@@ -2491,6 +2552,8 @@ CardCreateContainerEx(
 		logger->TraceInfo("#####    CardCreateContainerEx    #####");
 		logger->TraceInfo("#######################################");
 	}
+
+	logger->TraceInfo("CardCreateContainerEx returns SCARD_E_UNSUPPORTED_FEATURE");
 	return SCARD_E_UNSUPPORTED_FEATURE;
 } // of CardCreateContainerEx
 
