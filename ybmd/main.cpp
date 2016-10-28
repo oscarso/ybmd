@@ -97,6 +97,7 @@ void ReverseBuffer(LPBYTE pbData, DWORD cbData)
 		pbData[cbData - 1 - i] = t;
 	}
 }
+#if 0
 BOOL verifySignature(
 	LPBYTE	n,
 	DWORD	nlen,
@@ -206,6 +207,7 @@ RSA* openssl_test(void) {
 	}
 	return r;
 }
+#endif
 static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 	unsigned char *data, unsigned long *recv_len, int *sw) {
 	long rc;
@@ -1001,34 +1003,362 @@ CardAcquireContext(
 
 		if (pCardData->dwVersion > 5 && IsWindowsVistaOrGreater() && g_maxSpecVersion >= 6) {
 			logger->TraceInfo("[%s:%d][MD] Reporting version 6 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
-
-			/*pCardData->pfnCardGetChallengeEx = CardGetChallengeEx;
+#if 0
+			pCardData->pfnCardGetChallengeEx = CardGetChallengeEx;
 			pCardData->pfnCardAuthenticateEx = CardAuthenticateEx;
 			pCardData->pfnCardChangeAuthenticatorEx = CardChangeAuthenticatorEx;
 			pCardData->pfnCardDeauthenticateEx = CardDeauthenticateEx;
 			pCardData->pfnCardGetContainerProperty = CardGetContainerProperty;
 			pCardData->pfnCardSetContainerProperty = CardSetContainerProperty;
 			pCardData->pfnCardGetProperty = CardGetProperty;
-			pCardData->pfnCardSetProperty = CardSetProperty;*/
+			pCardData->pfnCardSetProperty = CardSetProperty;
+#endif
 		} else {
 			logger->TraceInfo("[%s:%d][MD] Version 6 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
 		}
 
 		if (pCardData->dwVersion > 6 && IsWindowsVistaOrGreater() && g_maxSpecVersion >= 7) {
 			logger->TraceInfo("[%s:%d][MD] Reporting version 7 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
-			/*pCardData->pfnCardDestroyKey = CardDestroyKey;
+#if 0
+			pCardData->pfnCardDestroyKey = CardDestroyKey;
 			pCardData->pfnCardGetAlgorithmProperty = CardGetAlgorithmProperty;
 			pCardData->pfnCardGetKeyProperty = CardGetKeyProperty;
 			pCardData->pfnCardGetSharedKeyHandle = CardGetSharedKeyHandle;
-			pCardData->pfnCardProcessEncryptedData = CardProcessEncryptedData;
+			//pCardData->pfnCardProcessEncryptedData = CardProcessEncryptedData;
 			pCardData->pfnCardSetKeyProperty = CardSetKeyProperty;
 			pCardData->pfnCardCreateContainerEx = CardCreateContainerEx;
-			pCardData->pfnMDImportSessionKey = MDImportSessionKey;
-			pCardData->pfnMDEncryptData = MDEncryptData;
-			pCardData->pfnCardImportSessionKey = CardImportSessionKey;*/
+			//pCardData->pfnMDImportSessionKey = MDImportSessionKey;
+			//pCardData->pfnMDEncryptData = MDEncryptData;
+			//pCardData->pfnCardImportSessionKey = CardImportSessionKey;
+#endif
 		} else {
 			logger->TraceInfo("[%s:%d][MD] Version 7 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
 		}
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardGetChallengeEx
+DWORD WINAPI
+CardGetChallengeEx(
+	__in									PCARD_DATA	pCardData,
+	__in									PIN_ID		PinId,
+	__deref_out_bcount(*pcbChallengeData)	PBYTE		*ppbChallengeData,
+	__out									PDWORD		pcbChallengeData,
+	__in									DWORD		dwFlags)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardGetChallengeEx   #####");
+		logger->TraceInfo("##################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardAuthenticateEx
+DWORD WINAPI
+CardAuthenticateEx(
+	__in									PCARD_DATA	pCardData,
+	__in									PIN_ID		PinId,
+	__in									DWORD		dwFlags,
+	__in_bcount(cbPinData)					PBYTE		pbPinData,
+	__in									DWORD		cbPinData,
+	__deref_opt_out_bcount(*pcbSessionPin)	PBYTE		*ppbSessionPin,
+	__out_opt								PDWORD		pcbSessionPin,
+	__out_opt								PDWORD		pcAttemptsRemaining
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####     CardAuthenticateEx     #####");
+		logger->TraceInfo("######################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardChangeAuthenticatorEx
+DWORD WINAPI
+CardChangeAuthenticatorEx(
+	__in									PCARD_DATA	pCardData,
+	__in									DWORD		dwFlags,
+	__in									PIN_ID		dwAuthenticatingPinId,
+	__in_bcount(cbAuthenticatingPinData)	PBYTE		pbAuthenticatingPinData,
+	__in									DWORD		cbAuthenticatingPinData,
+	__in									PIN_ID		dwTargetPinId,
+	__in_bcount(cbTargetData)				PBYTE		pbTargetData,
+	__in									DWORD		cbTargetData,
+	__in									DWORD		cRetryCount,
+	__out_opt								PDWORD		pcAttemptsRemaining
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardChangeAuthenticatorEx   #####");
+		logger->TraceInfo("#########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardDeauthenticateEx
+DWORD WINAPI
+CardDeauthenticateEx(
+	__in	PCARD_DATA	pCardData,
+	__in	PIN_SET		PinId,
+	__in	DWORD		dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####     CardDeauthenticateEx     #####");
+		logger->TraceInfo("########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardGetContainerProperty
+DWORD WINAPI
+CardGetContainerProperty(
+	__in										PCARD_DATA	pCardData,
+	__in										BYTE		bContainerIndex,
+	__in										LPCWSTR		wszProperty,
+	__out_bcount_part_opt(cbData, *pdwDataLen)	PBYTE		pbData,
+	__in										DWORD		cbData,
+	__out										PDWORD		pdwDataLen,
+	__in										DWORD		dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardGetContainerProperty   #####");
+		logger->TraceInfo("########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardSetContainerProperty
+DWORD WINAPI
+CardSetContainerProperty(
+	__in					PCARD_DATA	pCardData,
+	__in					BYTE		bContainerIndex,
+	__in					LPCWSTR		wszProperty,
+	__in_bcount(cbDataLen)	PBYTE		pbData,
+	__in					DWORD		cbDataLen,
+	__in					DWORD		dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardSetContainerProperty   #####");
+		logger->TraceInfo("########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardGetProperty
+DWORD WINAPI
+CardGetProperty(
+	__in										PCARD_DATA	pCardData,
+	__in										LPCWSTR		wszProperty,
+	__out_bcount_part_opt(cbData, *pdwDataLen)	PBYTE		pbData,
+	__in										DWORD		cbData,
+	__out										PDWORD		pdwDataLen,
+	__in										DWORD		dwFlags
+)
+{
+	ykpiv_rc		ykrc = YKPIV_OK;
+	ykpiv_state		ykState;
+	char			buf[MAX_PATH];
+	DWORD			dwRet = SCARD_S_SUCCESS;
+
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardGetProperty   #####");
+		logger->TraceInfo("###############################");
+		char prop[MAX_PATH] = { 0 };
+		wcstombs(prop, wszProperty, wcslen(wszProperty));
+		logger->TraceInfo("IN wszProperty: %s", prop);
+		logger->TraceInfo("IN cbData: %d", cbData);
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
+	}
+
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardGetProperty failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+
+	//CP_CARD_SERIAL_NO
+	if (0 == wcscmp(CP_CARD_SERIAL_NO, wszProperty)) {
+		memset(buf, 0, sizeof(buf));
+		ykrc = selectAppletYubiKey(&ykState);
+		ykrc = getSerialNumber(&ykState, &buf[0]);
+		memcpy(pbData, buf, 16);
+		if (pdwDataLen) {
+			*pdwDataLen = 16;
+		}
+	}
+	//CP_CARD_GUID
+	else if (0 == wcscmp(CP_CARD_GUID, wszProperty)) {
+		// Refer to: https://github.com/OpenSC/OpenSC/blob/master/src/minidriver/opensc-minidriver.inf.in
+#if 1
+		const unsigned char class_guid[] = {
+			0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
+			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
+#endif
+		memcpy(pbData, class_guid, sizeof(class_guid));
+		if (pdwDataLen) {
+			*pdwDataLen = sizeof(class_guid);
+		}
+	}
+
+	if (logger) {
+		logger->TraceInfo("OUT: pbData:");
+		logger->PrintBuffer(pbData, cbData);
+		logger->TraceInfo("OUT: *pdwDataLen: %d", *pdwDataLen);
+		logger->TraceInfo("CardGetProperty returns %x", dwRet);
+	}
+	return dwRet;
+}
+
+
+//CardSetProperty
+DWORD WINAPI
+CardSetProperty(
+	__in					PCARD_DATA	pCardData,
+	__in					LPCWSTR		wszProperty,
+	__in_bcount(cbDataLen)	PBYTE		pbData,
+	__in					DWORD		cbDataLen,
+	__in					DWORD		dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardSetProperty   #####");
+		logger->TraceInfo("###############################");
+		char prop[MAX_PATH] = { 0 };
+		wcstombs(prop, wszProperty, wcslen(wszProperty));
+		logger->TraceInfo("IN wszProperty: %s", prop);
+		logger->TraceInfo("IN cbDataLen: %d", cbDataLen);
+		logger->TraceInfo("IN dwFlags: %x", dwFlags);
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardDestroyKey
+DWORD WINAPI
+CardDestroyKey(
+	__in	PCARD_DATA		pCardData,
+	__in	CARD_KEY_HANDLE	hKey
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####     CardDestroyKey     #####");
+		logger->TraceInfo("###################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardGetAlgorithmProperty
+DWORD WINAPI
+CardGetAlgorithmProperty(
+	__in										PCARD_DATA	pCardData,
+	__in										LPCWSTR		pwszAlgId,
+	__in										LPCWSTR		pwszProperty,
+	__out_bcount_part_opt(cbData, *pdwDataLen)	PBYTE		pbData,
+	__in										DWORD		cbData,
+	__out										PDWORD		pdwDataLen,
+	__in										DWORD		dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####   CardGetAlgorithmProperty   #####");
+		logger->TraceInfo("########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardGetKeyProperty
+DWORD WINAPI
+CardGetKeyProperty(
+	__in										PCARD_DATA		pCardData,
+	__in										CARD_KEY_HANDLE	hKey,
+	__in										LPCWSTR			pwszProperty,
+	__out_bcount_part_opt(cbData, *pdwDataLen)	PBYTE			pbData,
+	__in										DWORD			cbData,
+	__out										PDWORD			pdwDataLen,
+	__in										DWORD			dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####      CardGetKeyProperty      #####");
+		logger->TraceInfo("########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardGetSharedKeyHandle
+DWORD WINAPI
+CardGetSharedKeyHandle(
+	__in								PCARD_DATA			pCardData,
+	__in_bcount(cbInput)				PBYTE				pbInput,
+	__in								DWORD				cbInput,
+	__deref_opt_out_bcount(*pcbOutput)	PBYTE				*ppbOutput,
+	__out_opt							PDWORD				pcbOutput,
+	__out								PCARD_KEY_HANDLE	phKey
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardGetSharedKeyHandle    #####");
+		logger->TraceInfo("########################################");
+	}
+
+	return SCARD_S_SUCCESS;
+}
+
+
+//CardSetKeyProperty
+DWORD WINAPI
+CardSetKeyProperty(
+	__in					PCARD_DATA		pCardData,
+	__in					CARD_KEY_HANDLE	hKey,
+	__in					LPCWSTR			pwszProperty,
+	__in_bcount(cbInput)	PBYTE			pbInput,
+	__in					DWORD			cbInput,
+	__in					DWORD			dwFlags
+)
+{
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardSetKeyProperty    #####");
+		logger->TraceInfo("####################################");
 	}
 
 	return SCARD_S_SUCCESS;
@@ -1308,6 +1638,7 @@ ykpiv_rc importPrivateKeyBlob(
 		//return ykrc;
 	}
 #endif
+#if 0
 	unsigned char	msg[] = "aaaaaaaaaaaaaaaaaaaa";
 	size_t			msglen = 20;
 	unsigned char	sig[1024];
@@ -1356,7 +1687,7 @@ ykpiv_rc importPrivateKeyBlob(
 		logger->TraceInfo("verifySignature NOT verified");
 		ykrc = YKPIV_GENERIC_ERROR;
 	}
-
+#endif
 	return ykrc;
 }
 //CardCreateContainer
@@ -1406,6 +1737,7 @@ CardCreateContainer(
 			ykrc = importPrivateKeyBlob(&ykState, pbKeyData);
 		break;
 		case CARD_CREATE_CONTAINER_KEY_GEN:
+			ykrc = importPrivateKeyBlob(&ykState, pbKeyData);
 		break;
 	}
 	return ykrc2mdrc(ykrc);
@@ -1704,108 +2036,6 @@ CardCreateFile(
 } // of CardCreateFile
 
 
-#if 0
-  //CardReadFile
-DWORD WINAPI
-CardReadFile(
-	__in PCARD_DATA pCardData,
-	__in LPSTR pszDirectoryName,
-	__in LPSTR pszFileName,
-	__in DWORD dwFlags,
-	__deref_out_bcount(*pcbData) PBYTE *ppbData,
-	__out PDWORD pcbData
-)
-{
-	DWORD	dwRet = SCARD_S_SUCCESS;
-	if (logger) {
-		logger->TraceInfo("\n");
-		logger->TraceInfo("#####    CardReadFile    #####");
-		logger->TraceInfo("##############################");
-		logger->TraceInfo("IN pszDirectoryName: %s", pszDirectoryName);
-		logger->TraceInfo("IN pszFileName: %s", pszFileName);
-		logger->TraceInfo("IN dwFlags: %x", dwFlags);
-	}
-	if (!pCardData)
-		return SCARD_E_INVALID_PARAMETER;
-	if (!pszFileName)
-		return SCARD_E_INVALID_PARAMETER;
-	if (!strlen(pszFileName))
-		return SCARD_E_INVALID_PARAMETER;
-	if (!ppbData)
-		return SCARD_E_INVALID_PARAMETER;
-	if (NULL == pcbData) {
-		if (logger) { logger->TraceInfo("pcbData is NULL, read the entire file"); }
-	}
-	if (0 == *pcbData) {
-		if (logger) { logger->TraceInfo("pcbData is 0, read the entire file"); }
-	}
-	if (dwFlags)
-		return SCARD_E_INVALID_PARAMETER;
-	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
-		if (logger) { logger->TraceInfo("CardReadFile failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
-		return SCARD_E_INVALID_PARAMETER;
-	}
-
-	//cardid
-	if (strcmp(pszFileName, szCARD_IDENTIFIER_FILE) == 0) {
-		// Refer to: https://github.com/OpenSC/OpenSC/blob/master/src/minidriver/opensc-minidriver.inf.in
-		const char class_guid[] = {
-						0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
-						0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
-		*pcbData = (DWORD)sizeof(class_guid);
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(1 + *pcbData);
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCARD_IDENTIFIER_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		memset(*ppbData, 0, 1 + *pcbData);
-		memcpy(*ppbData, class_guid, *pcbData);
-	}
-	//cardcf
-	else if (strcmp(pszFileName, szCACHE_FILE) == 0) {
-		const char buf[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };//dummy szCACHE_FILE value
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(buf));
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCACHE_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		*pcbData = (DWORD)sizeof(buf);
-		memcpy(*ppbData, buf, *pcbData);
-	}
-	//cmapfile
-	else if (strcmp(pszFileName, szCONTAINER_MAP_FILE) == 0) {
-		typedef struct _CONTAINERMAPRECORD {
-			BYTE GuidInfo[80];	// 40 x UNICODE char
-			BYTE Flags;		// Bit 1 set for default container
-			BYTE RFUPadding;
-			WORD ui16SigKeySize;
-			WORD ui16KeyExchangeKeySize;
-		} CONTAINERMAPRECORD;
-		CONTAINERMAPRECORD	cmaprec;//dummy szCONTAINER_MAP_FILE value
-		memset(&cmaprec, 0, sizeof(CONTAINERMAPRECORD));
-		cmaprec.Flags = 0x3;
-
-		*ppbData = (PBYTE)pCardData->pfnCspAlloc(sizeof(CONTAINERMAPRECORD));
-		if (!*ppbData) {
-			logger->TraceInfo("CardReadFile(szCONTAINER_MAP_FILE): SCARD_E_NO_MEMORY");
-			return SCARD_E_NO_MEMORY;
-		}
-		*pcbData = (DWORD)sizeof(CONTAINERMAPRECORD);
-		memcpy(*ppbData, &cmaprec, *pcbData);
-	}
-	else {
-		logger->TraceInfo("CardReadFile: SCARD_E_FILE_NOT_FOUND");
-		dwRet = SCARD_E_FILE_NOT_FOUND;
-	}
-
-	if (logger) {
-		logger->TraceInfo("*ppbData:");
-		logger->PrintBuffer(*ppbData, *pcbData);
-		logger->TraceInfo("CardReadFile returns %x", dwRet);
-	}
-	return dwRet;
-}
-#else
 //CardReadFile
 DWORD WINAPI
 CardReadFile(
@@ -1876,13 +2106,9 @@ CardReadFile(
 	//cardid - YKPIV_OBJ_MSMDCARDID
 	else if (0 == strcmp(pszFileName, szCARD_IDENTIFIER_FILE)) {
 		objID = YKPIV_OBJ_MSMDCARDID;
-		// Refer to: https://github.com/OpenSC/OpenSC/blob/master/src/minidriver/opensc-minidriver.inf.in
-		const unsigned char class_guid[] = {
-			0x99, 0x0a, 0x2b, 0xd7, 0xe7, 0x38, 0x46, 0xc7,
-			0xb2, 0x6f, 0x1c, 0xf8, 0xfb, 0x9f, 0x13, 0x91 };
-		buflen = sizeof(class_guid);
-		memcpy(buf, (DWORD *)&buflen, SZ_MAX_LEN);
-		memcpy(&buf[SZ_MAX_LEN], class_guid, buflen);
+		DWORD	dwDataLen = 0;
+		buflen = 16;
+		dwRet = CardGetProperty(pCardData, CP_CARD_GUID, (PBYTE)&buf[SZ_MAX_LEN], buflen, &dwDataLen, 0);
 	}
 	//cardapps - YKPIV_OBJ_MSMDCARDAPPS
 	else if (0 == strcmp(pszFileName, szCARD_APPS)) {
@@ -1940,7 +2166,6 @@ CardReadFile(
 	}
 	return dwRet;
 }
-#endif
 
 
 //CardWriteFile
