@@ -165,8 +165,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\cpplogger\cpplogger.cpp" />
+    <ClCompile Include="cardcapab.cpp" />
+    <ClCompile Include="cardcontainer.cpp" />
+    <ClCompile Include="cardcrypto.cpp" />
+    <ClCompile Include="cardfilesys.cpp" />
+    <ClCompile Include="cardkeycontainer.cpp" />
+    <ClCompile Include="cardpin.cpp" />
+    <ClCompile Include="cardsecurekeyinject.cpp" />
     <ClCompile Include="helper.cpp" />
-    <ClCompile Include="init.cpp" />
+    <ClCompile Include="cardinit.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>

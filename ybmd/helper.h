@@ -3,8 +3,7 @@
 #include <internal.h>
 
 
-//CPPLOGGER::CPPLogger*	logger = NULL;
-
+DWORD		ykrc2mdrc(const ykpiv_rc ykrc);
 
 ykpiv_rc	_send_data(ykpiv_state *state, APDU *apdu, unsigned char *data, unsigned long *recv_len, int *sw);
 

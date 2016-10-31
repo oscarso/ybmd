@@ -6,6 +6,58 @@
 CPPLOGGER::CPPLogger*		logger = NULL;
 
 
+DWORD	ykrc2mdrc(const ykpiv_rc ykrc) {
+	DWORD	dwRet;
+	switch (ykrc) {
+	case YKPIV_OK:						dwRet = SCARD_S_SUCCESS;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_OK -> SCARD_S_SUCCESS"); }
+		break;
+	case YKPIV_MEMORY_ERROR:			dwRet = SCARD_E_NO_MEMORY;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_MEMORY_ERROR -> SCARD_E_NO_MEMORY"); }
+		break;
+	case YKPIV_PCSC_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PCSC_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_SIZE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_SIZE_ERROR -> SCARD_E_INVALID_PARAMETER"); }
+		break;
+	case YKPIV_APPLET_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_APPLET_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_AUTHENTICATION_ERROR:	dwRet = SCARD_W_CARD_NOT_AUTHENTICATED;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_AUTHENTICATION_ERROR -> SCARD_W_CARD_NOT_AUTHENTICATED"); }
+		break;
+	case YKPIV_RANDOMNESS_ERROR:		dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_RANDOMNESS_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_GENERIC_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_GENERIC_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_KEY_ERROR:				dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_KEY_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_PARSE_ERROR:				dwRet = SCARD_E_INVALID_PARAMETER;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PARSE_ERROR -> SCARD_E_INVALID_PARAMETER"); }
+		break;
+	case YKPIV_WRONG_PIN:				dwRet = SCARD_W_WRONG_CHV;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_WRONG_PIN -> SCARD_W_WRONG_CHV"); }
+		break;
+	case YKPIV_INVALID_OBJECT:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_INVALID_OBJECT -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_ALGORITHM_ERROR:			dwRet = SCARD_F_INTERNAL_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_ALGORITHM_ERROR -> SCARD_F_INTERNAL_ERROR"); }
+		break;
+	case YKPIV_PIN_LOCKED:				dwRet = SCARD_W_CHV_BLOCKED;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: YKPIV_PIN_LOCKED -> SCARD_W_CHV_BLOCKED"); }
+		break;
+	default:							dwRet = SCARD_F_UNKNOWN_ERROR;
+		if (logger) { logger->TraceInfo("ykrc2mdrc: %d -> SCARD_F_UNKNOWN_ERROR", ykrc); }
+	}
+	return dwRet;
+}
+
+
 ykpiv_rc selectApplet(ykpiv_state *state) {
 	APDU apdu;
 	unsigned char data[0xff];

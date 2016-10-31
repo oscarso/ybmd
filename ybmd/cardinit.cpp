@@ -11,8 +11,8 @@
 
 extern	CPPLOGGER::CPPLogger*	logger;
 
-unsigned int		g_maxSpecVersion = 7;
-OSVERSIONINFO		g_osver;
+const unsigned int		MAX_SPEC_VERSION_SUPPORTED = 7;
+OSVERSIONINFO			g_osver;
 
 
 //CardAcquireContext
@@ -121,16 +121,16 @@ CardAcquireContext(
 		}
 	}
 
-	if (g_maxSpecVersion < pCardData->dwVersion)
-		pCardData->dwVersion = g_maxSpecVersion;
+	if (MAX_SPEC_VERSION_SUPPORTED < pCardData->dwVersion)
+		pCardData->dwVersion = MAX_SPEC_VERSION_SUPPORTED;
 
 	if (pCardData->dwVersion > 4) {
 		pCardData->pfnCardDeriveKey = NULL;
 		pCardData->pfnCardDestroyDHAgreement = NULL;
 		pCardData->pfnCspGetDHAgreement = NULL;
 
-		if (pCardData->dwVersion > 5 && IsWindowsVistaOrGreater() && g_maxSpecVersion >= 6) {
-			logger->TraceInfo("[%s:%d][MD] Reporting version 6 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
+		if (pCardData->dwVersion > 5 && IsWindowsVistaOrGreater() && MAX_SPEC_VERSION_SUPPORTED >= 6) {
+			logger->TraceInfo("[%s:%d][MD] Reporting version 6 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, MAX_SPEC_VERSION_SUPPORTED);
 #if 0
 			pCardData->pfnCardGetChallengeEx = CardGetChallengeEx;
 			pCardData->pfnCardAuthenticateEx = CardAuthenticateEx;
@@ -143,11 +143,11 @@ CardAcquireContext(
 #endif
 		}
 		else {
-			logger->TraceInfo("[%s:%d][MD] Version 6 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
+			logger->TraceInfo("[%s:%d][MD] Version 6 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, MAX_SPEC_VERSION_SUPPORTED);
 		}
 
-		if (pCardData->dwVersion > 6 && IsWindowsVistaOrGreater() && g_maxSpecVersion >= 7) {
-			logger->TraceInfo("[%s:%d][MD] Reporting version 7 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
+		if (pCardData->dwVersion > 6 && IsWindowsVistaOrGreater() && MAX_SPEC_VERSION_SUPPORTED >= 7) {
+			logger->TraceInfo("[%s:%d][MD] Reporting version 7 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, MAX_SPEC_VERSION_SUPPORTED);
 #if 0
 			pCardData->pfnCardDestroyKey = CardDestroyKey;
 			pCardData->pfnCardGetAlgorithmProperty = CardGetAlgorithmProperty;
@@ -162,7 +162,7 @@ CardAcquireContext(
 #endif
 		}
 		else {
-			logger->TraceInfo("[%s:%d][MD] Version 7 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
+			logger->TraceInfo("[%s:%d][MD] Version 7 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, MAX_SPEC_VERSION_SUPPORTED);
 		}
 	}
 
@@ -170,3 +170,60 @@ CardAcquireContext(
 	return SCARD_S_SUCCESS;
 }
 
+
+//CardDeleteContext
+DWORD WINAPI
+CardDeleteContext(
+	__inout		PCARD_DATA	pCardData
+)
+{
+	ykpiv_state	ykState;
+
+	if (logger) {
+		logger->TraceInfo("\n");
+		logger->TraceInfo("#####    CardDeleteContext    #####");
+		logger->TraceInfo("###################################");
+	}
+
+	if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
+		if (logger) { logger->TraceInfo("CardDeleteContext failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
+		return SCARD_E_INVALID_PARAMETER;
+	}
+
+	ykState.context = pCardData->hSCardCtx;
+	ykState.card = pCardData->hScard;
+
+	if (logger) {
+		logger->TraceInfo("CardDeleteContext: ykState.context = %x", ykState.context);
+		logger->TraceInfo("CardDeleteContext:    ykState.card = %x", ykState.card);
+	}
+
+	pCardData->pfnCardDeleteContext = NULL;
+	pCardData->pfnCardQueryCapabilities = NULL;
+	pCardData->pfnCardDeleteContainer = NULL;
+	pCardData->pfnCardCreateContainer = NULL;
+	pCardData->pfnCardGetContainerInfo = NULL;
+	pCardData->pfnCardAuthenticatePin = NULL;
+	pCardData->pfnCardGetChallenge = NULL;
+	pCardData->pfnCardAuthenticateChallenge = NULL;
+	pCardData->pfnCardUnblockPin = NULL;
+	pCardData->pfnCardChangeAuthenticator = NULL;
+	pCardData->pfnCardDeauthenticate = NULL;
+	pCardData->pfnCardCreateDirectory = NULL;
+	pCardData->pfnCardDeleteDirectory = NULL;
+	pCardData->pvUnused3 = NULL;
+	pCardData->pvUnused4 = NULL;
+	pCardData->pfnCardCreateFile = NULL;
+	pCardData->pfnCardReadFile = NULL;
+	pCardData->pfnCardWriteFile = NULL;
+	pCardData->pfnCardDeleteFile = NULL;
+	pCardData->pfnCardEnumFiles = NULL;
+	pCardData->pfnCardGetFileInfo = NULL;
+	pCardData->pfnCardQueryFreeSpace = NULL;
+	pCardData->pfnCardQueryKeySizes = NULL;
+	pCardData->pfnCardSignData = NULL;
+	pCardData->pfnCardRSADecrypt = NULL;
+	pCardData->pfnCardConstructDHAgreement = NULL;
+
+	return SCARD_S_SUCCESS;
+} // of CardDeleteContext
