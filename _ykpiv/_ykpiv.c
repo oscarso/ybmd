@@ -1,6 +1,6 @@
 /*
-
-	Keeping these code for testing and experimental purpose only.
+	These code are always commented out!
+	Keeping these code for testing and experiment purpose only.
 
 */
 #if 0
