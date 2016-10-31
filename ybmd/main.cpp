@@ -7,23 +7,24 @@
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 
-#include "../cpplogger/cpplogger.h"
 #include "../inc/cpdk/cardmod.h"
 #include <ykpiv/ykpiv.h>
 #include <internal.h>
+
+#include "../cpplogger/cpplogger.h"
+#include "helper.h"
 
 
 // OpenSSL defines
 #define	RSA_PKCS1_PADDING_SIZE	11
 
 // Global Variables
+extern	CPPLOGGER::CPPLogger*	logger;
+
 #define	SZ_MAX_PAGE			2048 //max size in bytes per flash page
 #define	SZ_MAX_LEN			sizeof(DWORD) //max size in bytes to store the length of write data
 #define	LOG_PATH			"C:\\Logs\\"
-CPPLOGGER::CPPLogger*		logger = NULL;
 HMODULE						g_hDll = 0;
-OSVERSIONINFO				g_osver;
-unsigned int				g_maxSpecVersion = 7;
 
 
 // Move into ykpiv.h later
@@ -228,37 +229,9 @@ RSA* openssl_test(void) {
 	return r;
 }
 #endif
-static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
-	unsigned char *data, unsigned long *recv_len, int *sw) {
-	long rc;
-	unsigned int send_len = (unsigned int)apdu->st.lc + 5;
-
-	if (logger) {
-		logger->TraceInfo("_send_data");
-		logger->TraceInfo("Data Sent:");
-		logger->PrintBuffer(apdu->raw, send_len);
-	}
-
-	rc = SCardTransmit(state->card, SCARD_PCI_T1, apdu->raw, send_len, NULL, data, recv_len);
-	if (rc != SCARD_S_SUCCESS) {
-		if (logger) { logger->TraceInfo("error: SCardTransmit failed, rc=%08lx\n", rc); }
-		return YKPIV_PCSC_ERROR;
-	}
-
-	if (logger) {
-		logger->TraceInfo("Data Received:");
-		logger->PrintBuffer(data, *recv_len);
-	}
-	if (*recv_len >= 2) {
-		*sw = (data[*recv_len - 2] << 8) | data[*recv_len - 1];
-	}
-	else {
-		*sw = 0;
-	}
-	return YKPIV_OK;
-}
 #endif
 #if 1
+#if 0
 ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 	const unsigned char *in_data, long in_len,
 	unsigned char *out_data, unsigned long *out_len, int *sw) {
@@ -345,6 +318,7 @@ ykpiv_rc _transfer_data(ykpiv_state *state, const unsigned char *templ,
 	}
 	return YKPIV_OK;
 }
+#endif
 static int get_length(const unsigned char *buffer, size_t *len) {
 	if (buffer[0] < 0x81) {
 		*len = buffer[0];
@@ -493,7 +467,7 @@ ykpiv_rc _import_private_key(
 		*in_ptr++ = touch_policy;
 	}
 
-	if (_transfer_data(state, templ, key_data, in_ptr - key_data, data, &recv_len, &sw) != YKPIV_OK)
+	if (ykpiv_transfer_data(state, templ, key_data, in_ptr - key_data, data, &recv_len, &sw) != YKPIV_OK)
 		return YKPIV_GENERIC_ERROR;
 
 	if (sw == SW_ERR_SECURITY_STATUS)
@@ -566,7 +540,7 @@ static ykpiv_rc _general_authenticate(ykpiv_state *state,
 	memcpy(dataptr, sign_in, (size_t)in_len);
 	dataptr += in_len;
 
-	if ((res = _transfer_data(state, templ, indata, dataptr - indata, data,
+	if ((res = ykpiv_transfer_data(state, templ, indata, dataptr - indata, data,
 		&recv_len, &sw)) != YKPIV_OK) {
 		if (state->verbose) {
 			fprintf(stderr, "Sign command failed to communicate.\n");
@@ -705,7 +679,7 @@ static ykpiv_rc _COMMON_token_generate_key(
 		*in_ptr++ = touch_policy;
 	}
 
-	if (_transfer_data(state, templ, in_data, in_ptr - in_data, data, &recv_len, &sw) != YKPIV_OK ||
+	if (ykpiv_transfer_data(state, templ, in_data, in_ptr - in_data, data, &recv_len, &sw) != YKPIV_OK ||
 		sw != 0x9000)
 		return YKPIV_GENERIC_ERROR;
 
@@ -790,111 +764,9 @@ ykpiv_rc _verify(ykpiv_state *state, const char *pin, int *tries) {
 #endif
 
 
-ykpiv_rc selectApplet(ykpiv_state *state) {
-		APDU apdu;
-		unsigned char data[0xff];
-		unsigned long recv_len = sizeof(data);
-		int sw;
-		ykpiv_rc res = YKPIV_OK;
-
-		if (logger) { logger->TraceInfo("selectApplet: _send_data"); }
-
-		memset(apdu.raw, 0, sizeof(apdu));
-		apdu.st.ins = 0xa4;
-		apdu.st.p1 = 0x04;
-		apdu.st.lc = sizeof(aid);
-		memcpy(apdu.st.data, aid, sizeof(aid));
-
-		if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
-			if (logger) { logger->TraceInfo("selectApplet: Failed communicating with card: %d", res); }
-		}
-		else if (sw == SW_SUCCESS) {
-			res = YKPIV_OK;
-		}
-		else {
-			if (logger) { logger->TraceInfo("selectApplet: Failed selecting application: %04x\n", sw); }
-		}
-		if (logger) { logger->TraceInfo("selectApplet returns %x\n", res); }
-		return res;
-}
 
 
-ykpiv_rc selectAppletYubiKey(ykpiv_state *state) {
-	APDU apdu;
-	unsigned char data[0xff];
-	unsigned long recv_len = sizeof(data);
-	int sw;
-	unsigned const char yk_applet[] = { 0xa0, 0x00, 0x00, 0x05, 0x27, 0x20, 0x01, 0x01 };
-	ykpiv_rc res = YKPIV_OK;
 
-	if (logger) { logger->TraceInfo("selectAppletYubiKey: _send_data"); }
-
-	memset(apdu.raw, 0, sizeof(apdu));
-	apdu.st.ins = 0xa4;
-	apdu.st.p1 = 0x04;
-	apdu.st.lc = sizeof(yk_applet);
-	memcpy(apdu.st.data, yk_applet, sizeof(yk_applet));
-
-	if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
-		if (logger) { logger->TraceInfo("selectAppletYubiKey: Failed communicating with card: %d", res); }
-	}
-	else if (sw == SW_SUCCESS) {
-		res = YKPIV_OK;
-	}
-	else {
-		if (logger) { logger->TraceInfo("selectAppletYubiKey: Failed selecting application: %04x\n", sw); }
-	}
-	if (logger) { logger->TraceInfo("selectAppletYubiKey returns %x\n", res); }
-	return res;
-}
-
-
-ykpiv_rc getSerialNumber(ykpiv_state *state, char* pSerial) {
-	ykpiv_rc		res = YKPIV_OK;
-	APDU			apdu;
-	int				sw;
-	unsigned char	data[0xff];
-	unsigned long	recv_len = sizeof(data);
-	unsigned const char	get_serial[] = { 0x00, 0x01, 0x10, 0x00 };
-	union {
-		unsigned int ui;
-		unsigned char uc[4];
-	} uSerial;
-
-	if (logger) { logger->TraceInfo("getSerialNumber"); }
-
-	memset(apdu.raw, 0, sizeof(apdu.raw));
-	memcpy(apdu.raw, get_serial, sizeof(get_serial));
-
-	if ((res = _send_data(state, &apdu, data, &recv_len, &sw)) != YKPIV_OK) {
-		if (logger) { logger->TraceInfo("getSerialNumber: Failed communicating with card: %d", res); }
-	} else if (sw == SW_SUCCESS) {
-		res = YKPIV_OK;
-		uSerial.uc[0] = data[3];
-		uSerial.uc[1] = data[2];
-		uSerial.uc[2] = data[1];
-		uSerial.uc[3] = data[0];
-		if (logger) { logger->TraceInfo("getSerialNumber: uSerial.ui = %u", uSerial.ui); }
-		memset(data, 0, sizeof(data));
-		sprintf((char *)data, "%u", uSerial.ui);
-		size_t len = strlen((const char *)data);
-		memcpy(pSerial, data, len);
-		memset(&pSerial[len], ' ', 16-len);
-		return YKPIV_OK;
-	} else {
-		if (logger) { logger->TraceInfo("getSerialNumber: Failed selecting application: %04x\n", sw); }
-	}
-
-	return YKPIV_GENERIC_ERROR;
-}
-
-
-BOOL shouldSelectApplet(ykpiv_state *state) {
-	int tries = 0;
-	ykpiv_rc ykrc = ykpiv_verify(state, NULL, &tries);
-	if (logger) { logger->TraceInfo("shouldSelectApplet returns ykrc=%d\n", ykrc); }
-	return (ykrc != YKPIV_OK);
-}
 
 
 int getRetryCount(ykpiv_state *state) {
@@ -904,160 +776,6 @@ int getRetryCount(ykpiv_state *state) {
 		return tries;
 	}
 	return -1;
-}
-
-
-//CardAcquireContext
-DWORD WINAPI
-CardAcquireContext(
-	IN		PCARD_DATA	pCardData,
-	__in	DWORD		dwFlags
-)
-{
-	ykpiv_state	ykState;
-	DWORD		dwRet = SCARD_S_SUCCESS;
-
-	if (logger) {
-		logger->TraceInfo("\n");
-		logger->TraceInfo("#####   CardAcquireContext   #####");
-		logger->TraceInfo("##################################");
-		logger->TraceInfo("IN dwFlags: %x", dwFlags);
-		logger->TraceInfo("IN pCardData->dwVersion: %d", pCardData->dwVersion);
-		logger->TraceInfo("IN pCardData->pbAtr:");
-		logger->PrintBuffer(pCardData->pbAtr, pCardData->cbAtr);
-		char cardName[MAX_PATH] = { 0 };
-		wcstombs(cardName, pCardData->pwszCardName, wcslen(pCardData->pwszCardName));
-		logger->TraceInfo("IN pCardData->pwszCardName: %s", cardName);
-		logger->TraceInfo("IN pCardData->pfnCspAlloc: %p", &(pCardData->pfnCspAlloc));
-		logger->TraceInfo("IN pCardData->pfnCspReAlloc: %p", &(pCardData->pfnCspReAlloc));
-		logger->TraceInfo("IN pCardData->pfnCspFree: %p", &(pCardData->pfnCspFree));
-		logger->TraceInfo("IN pCardData->pfnCspCacheAddFile: %p", &(pCardData->pfnCspCacheAddFile));
-		logger->TraceInfo("IN pCardData->pfnCspCacheLookupFile: %p", &(pCardData->pfnCspCacheLookupFile));
-		logger->TraceInfo("IN pCardData->pfnCspCacheDeleteFile: %p", &(pCardData->pfnCspCacheDeleteFile));
-		logger->TraceInfo("IN pCardData->pvCacheContext: %x", pCardData->pvCacheContext);
-		logger->TraceInfo("IN pCardData->pfnCspPadData: %p", &(pCardData->pfnCspPadData));
-		logger->TraceInfo("IN pCardData->hSCardCtx: %x", pCardData->hSCardCtx);
-		logger->TraceInfo("IN pCardData->hScard: %x", pCardData->hScard);
-	}
-
-	pCardData->pfnCardDeleteContext = CardDeleteContext;//
-	pCardData->pfnCardQueryCapabilities = CardQueryCapabilities;//
-	pCardData->pfnCardDeleteContainer = CardDeleteContainer;//
-	pCardData->pfnCardCreateContainer = CardCreateContainer;//
-	pCardData->pfnCardGetContainerInfo = CardGetContainerInfo;//
-	pCardData->pfnCardAuthenticatePin = CardAuthenticatePin;//
-	pCardData->pfnCardGetChallenge = CardGetChallenge;//
-	pCardData->pfnCardAuthenticateChallenge = CardAuthenticateChallenge;//
-	pCardData->pfnCardUnblockPin = CardUnblockPin;//
-	pCardData->pfnCardChangeAuthenticator = CardChangeAuthenticator;//
-	pCardData->pfnCardDeauthenticate = NULL;
-	pCardData->pfnCardCreateDirectory = CardCreateDirectory;//
-	pCardData->pfnCardDeleteDirectory = CardDeleteDirectory;//
-	pCardData->pvUnused3 = NULL;//
-	pCardData->pvUnused4 = NULL;//
-	pCardData->pfnCardCreateFile = CardCreateFile;//
-	pCardData->pfnCardReadFile = CardReadFile;//
-	pCardData->pfnCardWriteFile = CardWriteFile;//
-	pCardData->pfnCardDeleteFile = CardDeleteFile;//
-	pCardData->pfnCardEnumFiles = CardEnumFiles;//
-	pCardData->pfnCardGetFileInfo = CardGetFileInfo;//
-	pCardData->pfnCardQueryFreeSpace = CardQueryFreeSpace;//
-	pCardData->pfnCardQueryKeySizes = CardQueryKeySizes;//
-	pCardData->pfnCardSignData = CardSignData;//
-	pCardData->pfnCardRSADecrypt = CardRSADecrypt;//
-	pCardData->pfnCardConstructDHAgreement = NULL;//CardConstructDHAgreement;
-
-	if (pCardData->dwVersion != 0) {
-		if (NULL == pCardData->pbAtr)
-			return SCARD_E_INVALID_PARAMETER;
-
-		if (NULL == pCardData->pwszCardName) {
-			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pwszCardName", __FUNCTION__, __LINE__); }
-			return SCARD_E_INVALID_PARAMETER;
-		}
-		if (NULL == pCardData->pfnCspAlloc) {
-			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspAlloc", __FUNCTION__, __LINE__); }
-			return SCARD_E_INVALID_PARAMETER;
-		}
-		if (NULL == pCardData->pfnCspReAlloc) {
-			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspReAlloc", __FUNCTION__, __LINE__); }
-			return SCARD_E_INVALID_PARAMETER;
-		}
-		if (NULL == pCardData->pfnCspFree) {
-			if (logger) { logger->TraceInfo("[%s:%d][MD] Invalid pCardData->pfnCspFree", __FUNCTION__, __LINE__); }
-			return SCARD_E_INVALID_PARAMETER;
-		}
-		if (SCARD_S_SUCCESS != SCardIsValidContext(pCardData->hSCardCtx)) {
-			if (logger) { logger->TraceInfo("CardAcquireContext failed - SCardIsValidContext(%x) fails", pCardData->hSCardCtx); }
-			return SCARD_E_INVALID_PARAMETER;
-		}
-		if (0 == pCardData->hScard) {
-			if (logger) { logger->TraceInfo("CardAcquireContext failed - pCardData->hScard = NULL"); }
-			return SCARD_E_INVALID_PARAMETER;
-		}
-
-		memset(&ykState, 0, sizeof(ykpiv_state));
-		ykState.verbose = TRUE;
-		ykState.context = pCardData->hSCardCtx;
-		ykState.card = pCardData->hScard;
-
-		if (logger) {
-			logger->TraceInfo("CardAcquireContext:             ykState.context = %x", ykState.context);
-			logger->TraceInfo("CardAcquireContext:                ykState.card = %x", ykState.card);
-			logger->TraceInfo("CardAcquireContext: pCardData->pvVendorSpecific = %p", pCardData->pvVendorSpecific);
-		}
-
-		if (shouldSelectApplet(&ykState)) {
-			ykpiv_rc ykrc = selectApplet(&ykState);
-			if (ykrc != YKPIV_OK) { logger->TraceInfo("CardAcquireContext: selectApplet failed. ykrc=%d", ykrc); }
-		}
-	}
-
-	if (g_maxSpecVersion < pCardData->dwVersion)
-		pCardData->dwVersion = g_maxSpecVersion;
-
-	if (pCardData->dwVersion > 4) {
-		pCardData->pfnCardDeriveKey = NULL;
-		pCardData->pfnCardDestroyDHAgreement = NULL;
-		pCardData->pfnCspGetDHAgreement = NULL;
-
-		if (pCardData->dwVersion > 5 && IsWindowsVistaOrGreater() && g_maxSpecVersion >= 6) {
-			logger->TraceInfo("[%s:%d][MD] Reporting version 6 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
-#if 0
-			pCardData->pfnCardGetChallengeEx = CardGetChallengeEx;
-			pCardData->pfnCardAuthenticateEx = CardAuthenticateEx;
-			pCardData->pfnCardChangeAuthenticatorEx = CardChangeAuthenticatorEx;
-			pCardData->pfnCardDeauthenticateEx = CardDeauthenticateEx;
-			pCardData->pfnCardGetContainerProperty = CardGetContainerProperty;
-			pCardData->pfnCardSetContainerProperty = CardSetContainerProperty;
-			pCardData->pfnCardGetProperty = CardGetProperty;
-			pCardData->pfnCardSetProperty = CardSetProperty;
-#endif
-		} else {
-			logger->TraceInfo("[%s:%d][MD] Version 6 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
-		}
-
-		if (pCardData->dwVersion > 6 && IsWindowsVistaOrGreater() && g_maxSpecVersion >= 7) {
-			logger->TraceInfo("[%s:%d][MD] Reporting version 7 on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
-#if 0
-			pCardData->pfnCardDestroyKey = CardDestroyKey;
-			pCardData->pfnCardGetAlgorithmProperty = CardGetAlgorithmProperty;
-			pCardData->pfnCardGetKeyProperty = CardGetKeyProperty;
-			pCardData->pfnCardGetSharedKeyHandle = CardGetSharedKeyHandle;
-			//pCardData->pfnCardProcessEncryptedData = CardProcessEncryptedData;
-			pCardData->pfnCardSetKeyProperty = CardSetKeyProperty;
-			pCardData->pfnCardCreateContainerEx = CardCreateContainerEx;
-			//pCardData->pfnMDImportSessionKey = MDImportSessionKey;
-			//pCardData->pfnMDEncryptData = MDEncryptData;
-			//pCardData->pfnCardImportSessionKey = CardImportSessionKey;
-#endif
-		} else {
-			logger->TraceInfo("[%s:%d][MD] Version 7 is not supported on Windows version %i.%i build %i. Max supported spec version is set to %i", __FUNCTION__, __LINE__, g_osver.dwMajorVersion, g_osver.dwMinorVersion, g_osver.dwBuildNumber, g_maxSpecVersion);
-		}
-	}
-
-	logger->TraceInfo("CardAcquireContext returns SCARD_S_SUCCESS");
-	return SCARD_S_SUCCESS;
 }
 
 

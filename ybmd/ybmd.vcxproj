@@ -165,12 +165,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\cpplogger\cpplogger.cpp" />
+    <ClCompile Include="helper.cpp" />
+    <ClCompile Include="init.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\cpplogger\cpplogger.h" />
     <ClInclude Include="..\inc_cpdk\cardmod.h" />
     <ClInclude Include="..\yubico-piv-tool-win64\src\internal.h" />
+    <ClInclude Include="helper.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
